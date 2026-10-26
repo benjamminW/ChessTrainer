@@ -9,7 +9,9 @@ Play Stockfish at a strength from 400 to 2500 Elo, and get a plain-English expla
 - **Tactics and strategy tips.** A Tips card lists what matters in the current position. Tactics include mate threats, pieces in danger, loose enemy pieces, pins, fork chances and back-rank weaknesses. Strategy covers development, castling, the center, king activity, passed pawns, open files, the bishop pair and pawn weaknesses. Click a tip to circle its squares on the board.
 - **Lessons.** Explanations of your weaker moves end with a short general tip matched to the error, such as a blunder check after hanging a piece.
 - **Hint-free play.** "Show coach and tips during play" can be switched off. Explanations, tips, the eval bar and arrows then appear only after the game ends. The Hint button still works when you ask for it.
-- **Takebacks and branching.** Unlimited takebacks, with a counter. Click any move to review it, and play from an earlier position to branch (you're asked to confirm first).
+- **Takebacks and branching.** Unlimited takebacks, with a counter. Click any move to review it, then either play a different move or press **Continue from here** on any earlier position to branch (you're asked to confirm first).
+- **Piece counter.** Bars above and below the board show each player's captured pieces and the material lead (e.g. +3).
+- **Board and piece themes.** Choose a Brown or Green board and Classic or Minimal pieces; the choice is remembered. The Minimal set and green board are plain SVGs in `src/themes/`, wired up in `src/themes.css`.
 - **Standard game handling.** Checkmate, stalemate, threefold repetition, insufficient material and the 50-move rule are detected. Includes a promotion picker, PGN export with classification comments, and auto-save to `localStorage`.
 
 ## Run locally
@@ -127,6 +129,8 @@ src/
   game/session.ts      game state, takebacks, branching, result detection
   game/pgn.ts          PGN export with comments
   game/persistence.ts  localStorage
+  game/material.ts     captured pieces and material lead
+  themes/, themes.css  green board and Minimal piece set
   ui/                  board (chessground), panel, promotion picker
   main.ts              app controller
 tests/                 Vitest unit tests

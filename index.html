@@ -16,6 +16,7 @@
     <main class="layout">
       <section class="board-col" aria-label="Board">
         <div class="board-row">
+          <div id="bar-top" class="player-bar"></div>
           <div id="evalbar" class="evalbar" role="meter" aria-label="Evaluation">
             <div class="evalbar-fill"></div>
             <span class="evalbar-label"></span>
@@ -23,6 +24,7 @@
           <div id="board-host" class="board-host">
             <div id="board" class="board"></div>
           </div>
+          <div id="bar-bottom" class="player-bar"></div>
         </div>
         <nav class="nav" aria-label="Move navigation">
           <button type="button" class="btn icon" id="nav-first" title="First position (Home)" aria-label="First position">⏮</button>
@@ -50,6 +52,22 @@
             <input type="checkbox" id="coach-toggle" />
             <span>Show coach and tips during play</span>
           </label>
+          <div class="appearance">
+            <label>
+              Board
+              <select id="board-theme">
+                <option value="brown">Brown</option>
+                <option value="green">Green</option>
+              </select>
+            </label>
+            <label>
+              Pieces
+              <select id="piece-set">
+                <option value="classic">Classic</option>
+                <option value="minimal">Minimal</option>
+              </select>
+            </label>
+          </div>
         </section>
 
         <section class="card explain" aria-label="Coach" aria-live="polite">

@@ -258,3 +258,43 @@ export function renderTips(el: HTMLElement, v: TipsView): void {
   group('Tactics', v.tactics, 'Nothing tactical right now. Still check every capture and check before you move.');
   group('Strategy', v.strategy, '');
 }
+
+// ---------------------------------------------------------------- player bars
+
+export interface PlayerBarView {
+  name: string;
+  status?: string;
+  toMove: boolean;
+  /** Pieces this player has captured (of the opponent's color). */
+  captured: string[];
+  capturedColor: Color;
+  /** Material lead in pawns (0 = not ahead). */
+  lead: number;
+}
+
+const PIECE_CLASS: Record<string, string> = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen' };
+
+export function renderPlayerBar(el: HTMLElement, v: PlayerBarView): void {
+  el.replaceChildren();
+  el.classList.toggle('to-move', v.toMove);
+  el.append(h('span', { class: 'player-name' }, v.name));
+  if (v.status) el.append(h('span', { class: 'player-status' }, v.status));
+  const color = v.capturedColor === 'w' ? 'white' : 'black';
+  const groups: HTMLElement[] = [];
+  for (const t of ['p', 'n', 'b', 'r', 'q']) {
+    const n = v.captured.filter((x) => x === t).length;
+    if (!n) continue;
+    const g = h('span', { class: 'group' });
+    for (let i = 0; i < n; i++) {
+      const piece = document.createElement('piece');
+      piece.className = `${PIECE_CLASS[t]} ${color}`;
+      g.append(piece);
+    }
+    groups.push(g);
+  }
+  const label = v.captured.length
+    ? `Captured: ${v.captured.length} piece${v.captured.length === 1 ? '' : 's'}` + (v.lead ? `, up ${v.lead}` : '')
+    : 'No captures yet';
+  el.append(h('span', { class: 'captured cg-wrap', 'aria-label': label, title: label }, ...groups));
+  if (v.lead) el.append(h('span', { class: 'lead' }, `+${v.lead}`));
+}

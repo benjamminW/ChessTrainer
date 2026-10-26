@@ -214,3 +214,14 @@ describe('hint and tip priorities', () => {
     expect(findPins(new Chess(LOOSE_QUEEN), 'w')).toEqual([]);
   });
 });
+
+describe('pins worth mentioning', () => {
+  it('skips a rook "pinning" a pawn to a defended rook', () => {
+    // Ra5 lines up a2 with a1; the a1 rook is defended by the queen, so nothing is won.
+    expect(findPins(new Chess('4k3/8/8/r7/8/8/P7/RQ2K3 b - - 0 1'), 'b')).toEqual([]);
+  });
+
+  it('keeps a bishop pinning a knight to a rook', () => {
+    expect(findPins(new Chess('4k3/8/8/8/3b4/8/1N6/R3K3 b - - 0 1'), 'b')).toHaveLength(1);
+  });
+});

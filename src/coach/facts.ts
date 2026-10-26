@@ -179,8 +179,10 @@ export function findPins(chess: Chess, byColor: Color): Pin[] {
           first = here;
           continue;
         }
-        // Pinned to the king, or to a rook/queen worth more than the pinned piece.
-        if (occ.type === 'k' || (VALUE[occ.type] >= 5 && VALUE[occ.type] > VALUE[first.type])) {
+        // Pinned to the king, or to a rook/queen worth more than the pinned piece that the
+        // pinner could actually win (worth more than the pinner, or undefended).
+        const winnable = VALUE[occ.type] > VALUE[p.type] || chess.attackers(sq, occ.color).length === 0;
+        if (occ.type === 'k' || (VALUE[occ.type] >= 5 && VALUE[occ.type] > VALUE[first.type] && winnable)) {
           pins.push({ pinner: p, pinned: first, target: here });
         }
         break;

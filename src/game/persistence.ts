@@ -8,9 +8,17 @@ export interface Settings {
   colorChoice: 'w' | 'b' | 'random';
   /** Show explanations, eval bar and arrows while the game is in progress. */
   coachDuringPlay: boolean;
+  boardTheme: 'brown' | 'green';
+  pieceSet: 'classic' | 'minimal';
 }
 
-export const DEFAULT_SETTINGS: Settings = { elo: 1200, colorChoice: 'w', coachDuringPlay: true };
+export const DEFAULT_SETTINGS: Settings = {
+  elo: 1200,
+  colorChoice: 'w',
+  coachDuringPlay: true,
+  boardTheme: 'brown',
+  pieceSet: 'classic',
+};
 
 // localStorage can throw (private mode, blocked storage); the app works without it.
 function read<T>(key: string): T | null {

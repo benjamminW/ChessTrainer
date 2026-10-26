@@ -1,6 +1,7 @@
 import 'chessground/assets/chessground.base.css';
 import 'chessground/assets/chessground.brown.css';
 import 'chessground/assets/chessground.cburnett.css';
+import './themes.css';
 import './styles.css';
 
 import { chooseBotMove } from './bot/bot';
@@ -13,12 +14,14 @@ import { scoreMove, terminalScore } from './coach/review';
 import { RuleBasedProvider } from './coach/ruleBased';
 import { Engine, SearchCancelled, type Analysis } from './engine/uci';
 import { loadGame, loadSettings, saveGame, saveSettings, type Settings } from './game/persistence';
+import { materialSummary } from './game/material';
 import { exportPgn } from './game/pgn';
 import { Session, newGameState } from './game/session';
 import type { Color, PlyRecord } from './types';
 import { Board, type BoardView } from './ui/board';
 import {
-  moveLabel, renderEvalBar, renderExplanation, renderHint, renderMoves, renderTips, type ExplainView,
+  moveLabel, renderEvalBar, renderExplanation, renderHint, renderMoves, renderPlayerBar, renderTips,
+  type ExplainView,
 } from './ui/panel';
 import { pickPromotion } from './ui/promotion';
 
@@ -76,6 +79,7 @@ class App {
     );
 
     this.bindUi();
+    this.applyAppearance();
     this.render();
     if (!saved) this.openNewGameDialog(true);
     else this.resume();
@@ -375,6 +379,19 @@ class App {
     }
     renderEvalBar($('evalbar'), cp, this.orientation, coach);
 
+    // Player bars: the side at the top of the board above it, the other below.
+    const material = materialSummary(fen);
+    const bar = (c: Color) => ({
+      name: c === this.userColor ? 'You' : `Coach (${s.state.elo})`,
+      status: c !== this.userColor && this.botThinking && s.atLatest ? 'thinking…' : undefined,
+      toMove: !over && turn === c,
+      captured: material[c].captured,
+      capturedColor: (c === 'w' ? 'b' : 'w') as Color,
+      lead: material[c].lead,
+    });
+    renderPlayerBar($('bar-top'), bar(this.orientation === 'w' ? 'b' : 'w'));
+    renderPlayerBar($('bar-bottom'), bar(this.orientation));
+
     // Status
     $('status').textContent = this.statusText();
     const hints = s.state.hintsUsed ?? 0;
@@ -405,7 +422,8 @@ class App {
     $<HTMLButtonElement>('nav-prev').disabled = s.cursor === 0;
     $<HTMLButtonElement>('nav-next').disabled = s.atLatest;
     $<HTMLButtonElement>('nav-last').disabled = s.atLatest;
-    $('continue-here').hidden = s.atLatest || s.turnAt() === this.userColor;
+    // Any earlier position can become the new end of the game, whoever is to move there.
+    $('continue-here').hidden = s.atLatest;
     $<HTMLInputElement>('coach-toggle').checked = this.settings.coachDuringPlay;
 
     // Explanation
@@ -463,6 +481,16 @@ class App {
   bindUi(): void {
     $('btn-new').addEventListener('click', () => this.openNewGameDialog(false));
     $('btn-hint').addEventListener('click', () => this.requestHint());
+    $<HTMLSelectElement>('board-theme').addEventListener('change', (e) => {
+      this.settings.boardTheme = (e.target as HTMLSelectElement).value as Settings['boardTheme'];
+      saveSettings(this.settings);
+      this.applyAppearance();
+    });
+    $<HTMLSelectElement>('piece-set').addEventListener('change', (e) => {
+      this.settings.pieceSet = (e.target as HTMLSelectElement).value as Settings['pieceSet'];
+      saveSettings(this.settings);
+      this.applyAppearance();
+    });
     $('btn-takeback').addEventListener('click', () => this.takeBack());
     $('btn-flip').addEventListener('click', () => {
       this.orientation = this.orientation === 'w' ? 'b' : 'w';
@@ -547,6 +575,13 @@ class App {
     a.download = `chess-coach-${this.session.state.startedAt.slice(0, 10)}.pgn`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  applyAppearance(): void {
+    document.body.classList.toggle('board-green', this.settings.boardTheme === 'green');
+    document.body.classList.toggle('pieces-minimal', this.settings.pieceSet === 'minimal');
+    $<HTMLSelectElement>('board-theme').value = this.settings.boardTheme;
+    $<HTMLSelectElement>('piece-set').value = this.settings.pieceSet;
   }
 
   persist(): void {
