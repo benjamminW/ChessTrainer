@@ -1,6 +1,7 @@
 import 'chessground/assets/chessground.base.css';
 import 'chessground/assets/chessground.brown.css';
 import 'chessground/assets/chessground.cburnett.css';
+import './themes/generated.css';
 import './themes.css';
 import './styles.css';
 
@@ -9,6 +10,7 @@ import { COACH_CONFIG } from './config/coach';
 import { HINT_LEVELS, buildHints, type HintStep } from './coach/hints';
 import { strategicTips, tacticalTips, type Tip } from './coach/tips';
 import { clampElo } from './config/strength';
+import { BOARDS, PIECE_SETS } from './themes/catalog';
 import type { ExplanationProvider } from './coach/provider';
 import { scoreMove, terminalScore } from './coach/review';
 import { RuleBasedProvider } from './coach/ruleBased';
@@ -481,13 +483,17 @@ class App {
   bindUi(): void {
     $('btn-new').addEventListener('click', () => this.openNewGameDialog(false));
     $('btn-hint').addEventListener('click', () => this.requestHint());
+    const fill = (id: string, options: { id: string; name: string }[]) =>
+      $<HTMLSelectElement>(id).replaceChildren(...options.map((o) => new Option(o.name, o.id)));
+    fill('board-theme', BOARDS);
+    fill('piece-set', PIECE_SETS);
     $<HTMLSelectElement>('board-theme').addEventListener('change', (e) => {
-      this.settings.boardTheme = (e.target as HTMLSelectElement).value as Settings['boardTheme'];
+      this.settings.boardTheme = (e.target as HTMLSelectElement).value;
       saveSettings(this.settings);
       this.applyAppearance();
     });
     $<HTMLSelectElement>('piece-set').addEventListener('change', (e) => {
-      this.settings.pieceSet = (e.target as HTMLSelectElement).value as Settings['pieceSet'];
+      this.settings.pieceSet = (e.target as HTMLSelectElement).value;
       saveSettings(this.settings);
       this.applyAppearance();
     });
@@ -578,8 +584,8 @@ class App {
   }
 
   applyAppearance(): void {
-    for (const b of ['green', 'neon']) document.body.classList.toggle(`board-${b}`, this.settings.boardTheme === b);
-    for (const p of ['minimal', 'neon']) document.body.classList.toggle(`pieces-${p}`, this.settings.pieceSet === p);
+    for (const b of BOARDS) document.body.classList.toggle(`board-${b.id}`, this.settings.boardTheme === b.id);
+    for (const p of PIECE_SETS) document.body.classList.toggle(`pieces-${p.id}`, this.settings.pieceSet === p.id);
     $<HTMLSelectElement>('board-theme').value = this.settings.boardTheme;
     $<HTMLSelectElement>('piece-set').value = this.settings.pieceSet;
   }

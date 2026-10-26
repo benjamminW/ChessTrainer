@@ -1,3 +1,4 @@
+import { BOARDS, PIECE_SETS } from '../themes/catalog';
 import type { GameState } from '../types';
 
 const GAME_KEY = 'chess-coach:game:v1';
@@ -8,8 +9,10 @@ export interface Settings {
   colorChoice: 'w' | 'b' | 'random';
   /** Show explanations, eval bar and arrows while the game is in progress. */
   coachDuringPlay: boolean;
-  boardTheme: 'brown' | 'green' | 'neon';
-  pieceSet: 'classic' | 'minimal' | 'neon';
+  /** An id from BOARDS in src/themes/catalog.ts. */
+  boardTheme: string;
+  /** An id from PIECE_SETS in src/themes/catalog.ts. */
+  pieceSet: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -48,7 +51,11 @@ export function saveGame(state: GameState): void {
 }
 
 export function loadSettings(): Settings {
-  return { ...DEFAULT_SETTINGS, ...read<Partial<Settings>>(SETTINGS_KEY) };
+  const s = { ...DEFAULT_SETTINGS, ...read<Partial<Settings>>(SETTINGS_KEY) };
+  // Fall back if a saved theme no longer exists.
+  if (!BOARDS.some((b) => b.id === s.boardTheme)) s.boardTheme = DEFAULT_SETTINGS.boardTheme;
+  if (!PIECE_SETS.some((p) => p.id === s.pieceSet)) s.pieceSet = DEFAULT_SETTINGS.pieceSet;
+  return s;
 }
 
 export function saveSettings(s: Settings): void {
