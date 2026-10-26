@@ -1,0 +1,27 @@
+{
+  "name": "chess-coach",
+  "version": "0.1.0",
+  "description": "Browser-based chess coach: play Stockfish at a chosen strength and get move-by-move explanations.",
+  "scripts": {
+    "copy-engine": "node scripts/copy-engine.mjs",
+    "postinstall": "node scripts/copy-engine.mjs",
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "license": "GPL-3.0-or-later",
+  "type": "module",
+  "dependencies": {
+    "chess.js": "^1.4.0",
+    "chessground": "^9.2.1",
+    "stockfish": "^19.0.1"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  },
+  "private": true
+}
