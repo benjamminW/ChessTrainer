@@ -578,8 +578,8 @@ class App {
   }
 
   applyAppearance(): void {
-    document.body.classList.toggle('board-green', this.settings.boardTheme === 'green');
-    document.body.classList.toggle('pieces-minimal', this.settings.pieceSet === 'minimal');
+    for (const b of ['green', 'neon']) document.body.classList.toggle(`board-${b}`, this.settings.boardTheme === b);
+    for (const p of ['minimal', 'neon']) document.body.classList.toggle(`pieces-${p}`, this.settings.pieceSet === p);
     $<HTMLSelectElement>('board-theme').value = this.settings.boardTheme;
     $<HTMLSelectElement>('piece-set').value = this.settings.pieceSet;
   }

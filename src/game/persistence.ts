@@ -8,8 +8,8 @@ export interface Settings {
   colorChoice: 'w' | 'b' | 'random';
   /** Show explanations, eval bar and arrows while the game is in progress. */
   coachDuringPlay: boolean;
-  boardTheme: 'brown' | 'green';
-  pieceSet: 'classic' | 'minimal';
+  boardTheme: 'brown' | 'green' | 'neon';
+  pieceSet: 'classic' | 'minimal' | 'neon';
 }
 
 export const DEFAULT_SETTINGS: Settings = {
