@@ -8,5 +8,7 @@ export default defineConfig({
   build: { target: 'es2022' },
   test: {
     include: ['tests/**/*.test.ts'],
+    // Let tests read the generated theme CSS (Vitest blanks CSS by default).
+    css: { include: [/generated\.css/] },
   },
 });
