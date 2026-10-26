@@ -93,8 +93,30 @@ export function describeIdea(
   return joinParts(parts);
 }
 
+/** What a bad move did wrong, used to pick a general lesson. */
+export type LessonKind =
+  | 'allows-mate' | 'missed-mate' | 'hangs' | 'allows-fork' | 'missed-fork'
+  | 'missed-capture' | 'allows-capture' | 'castling' | 'material';
+
+/** General advice for each kind of error, most important first. */
+export const LESSONS: [LessonKind, string][] = [
+  ['allows-mate', "Before every move, ask what your opponent is threatening. Look at all of their checks first."],
+  ['missed-mate', 'When the enemy king is exposed, go through every check. Mates often hide in forcing moves.'],
+  ['hangs', 'Blunder check: before you let go of a piece, see which squares your opponent attacks. Undefended pieces get taken.'],
+  ['allows-fork', 'Knights and queens fork. Keep your king and valuable pieces off squares a single enemy piece can hit at once.'],
+  ['missed-fork', 'Look for a square where one of your pieces attacks two targets at once, especially the king plus something.'],
+  ['missed-capture', 'Scan for captures every move. A piece that is attacked more times than it is defended can be won.'],
+  ['allows-capture', 'Count attackers and defenders on every piece your opponent can hit.'],
+  ['castling', 'Castling early is usually worth it. Moving the king or a rook gives up that option for good.'],
+  ['material', 'Think a few moves ahead: compare what each candidate move wins or loses after the most forcing replies.'],
+];
+
+export function lessonFor(kinds: Set<LessonKind>): string | undefined {
+  return LESSONS.find(([k]) => kinds.has(k))?.[1];
+}
+
 /** Problems created by the played move, phrased about the mover's pieces. */
-function weaknessFacts(ctx: MoveContext, pvAfter: string[]): string[] {
+function weaknessFacts(ctx: MoveContext, pvAfter: string[], kinds: Set<LessonKind> = new Set()): string[] {
   const { ply, after, userColor } = ctx;
   const mover = ply.color;
   const facts: string[] = [];
@@ -107,6 +129,7 @@ function weaknessFacts(ctx: MoveContext, pvAfter: string[]): string[] {
   const oppMate = after?.lines[0]?.mate;
   if (oppMate !== undefined && oppMate !== null && oppMate > 0) {
     facts.push(`Allows mate in ${oppMate}${pvAfter[0] ? `, starting with ${pvAfter[0]}` : ''}.`);
+    kinds.add('allows-mate');
   }
 
   // Newly hanging pieces (the moved piece maps from → to).
@@ -126,6 +149,7 @@ function weaknessFacts(ctx: MoveContext, pvAfter: string[]): string[] {
       facts.push(`Stops protecting ${piece}, which can now be taken.`);
     }
     explained.add(p.square);
+    kinds.add('hangs');
   }
 
   // The opponent's best reply: a fork or a capture?
@@ -136,8 +160,10 @@ function weaknessFacts(ctx: MoveContext, pvAfter: string[]): string[] {
       const fork = forkTargets(r.chess, r.move.to);
       if (fork.length >= 2) {
         facts.push(`Allows a fork: ${r.move.san} hits ${listPieces(fork, userColor)}.`);
+        kinds.add('allows-fork');
       } else if (r.move.captured && !explained.has(r.move.to) && VALUE[r.move.captured] >= 1) {
         facts.push(`Allows ${r.move.san}, capturing ${own} ${NAME[r.move.captured]}.`);
+        kinds.add('allows-capture');
       }
     }
   }
@@ -151,13 +177,19 @@ function weaknessFacts(ctx: MoveContext, pvAfter: string[]): string[] {
     if (lostK || lostQ) {
       const side = lostK && lostQ ? '' : lostK ? ' kingside' : ' queenside';
       facts.push(`Gives up the right to castle${side}.`);
+      kinds.add('castling');
     }
   }
   return facts;
 }
 
 /** What the engine's better move would have achieved. */
-function missedFacts(ctx: MoveContext, bestLine: string[], alreadyExplained: boolean): string[] {
+function missedFacts(
+  ctx: MoveContext,
+  bestLine: string[],
+  alreadyExplained: boolean,
+  kinds: Set<LessonKind> = new Set(),
+): string[] {
   const { ply, numbers, userColor } = ctx;
   const facts: string[] = [];
   const bestUci = numbers.bestUci;
@@ -168,6 +200,7 @@ function missedFacts(ctx: MoveContext, bestLine: string[], alreadyExplained: boo
   const playedMate = mateIn(numbers.playedCp);
   if (mate !== null && mate > 0 && (playedMate === null || playedMate <= 0 || playedMate > mate)) {
     facts.push(`You had mate in ${mate}, starting with ${bestSan}.`);
+    kinds.add('missed-mate');
     return facts;
   }
 
@@ -176,9 +209,13 @@ function missedFacts(ctx: MoveContext, bestLine: string[], alreadyExplained: boo
     const before = new Chess(ply.fenBefore);
     if (r.move.captured && isHanging(before, r.move.to)) {
       facts.push(`Missed ${bestSan}: the ${NAME[r.move.captured]} on ${r.move.to} was there for the taking.`);
+      kinds.add('missed-capture');
     } else {
       const fork = forkTargets(r.chess, r.move.to);
-      if (fork.length >= 2) facts.push(`Missed ${bestSan}, forking ${listPieces(fork, userColor)}.`);
+      if (fork.length >= 2) {
+        facts.push(`Missed ${bestSan}, forking ${listPieces(fork, userColor)}.`);
+        kinds.add('missed-fork');
+      }
     }
   }
 
@@ -191,6 +228,7 @@ function missedFacts(ctx: MoveContext, bestLine: string[], alreadyExplained: boo
   const diff = matBest - matPlayed;
   if (diff >= 1 && facts.length === 0 && !alreadyExplained) {
     facts.push(`Over the next few moves, ${bestSan} comes out ${materialWords(diff)} ahead of what you played.`);
+    kinds.add('material');
   }
 
   const idea = describeIdea(ply.fenBefore, bestUci, userColor, ctx.prev, null);
@@ -231,13 +269,15 @@ export class RuleBasedProvider implements ExplanationProvider {
     const headline = numbers.bestSan
       ? `${cls}. ${numbers.bestSan} was better (${formatEval(numbers.evalBefore)}).`
       : `${cls}.`;
-    const weak = weaknessFacts(ctx, pvSan);
-    const details = [...weak, ...missedFacts(ctx, bestLineUci, weak.length > 0)];
+    const kinds = new Set<LessonKind>();
+    const weak = weaknessFacts(ctx, pvSan, kinds);
+    const details = [...weak, ...missedFacts(ctx, bestLineUci, weak.length > 0, kinds)];
     return {
       headline,
       details,
       pvSan,
       betterLineSan: lineToSan(ply.fenBefore, bestLineUci, n),
+      tip: lessonFor(kinds),
     };
   }
 }

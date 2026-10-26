@@ -5,7 +5,10 @@ Play Stockfish at a strength from 400 to 2500 Elo, and get a plain-English expla
 - **Human-like strength levels.** The bot picks from the engine's top moves with a strength-dependent probability. Below 1200 it also makes real beginner mistakes. It pauses to "think" before moving.
 - **Move ratings.** Every move is rated Best / Good / Inaccuracy / Mistake / Blunder. Your weaker moves get the better move, its eval, and concrete reasons, for example: "Leaves your bishop on a6 undefended", "Allows a fork: Nc7+ hits your king and rook", "You had mate in 2".
 - **Board aids.** An eval bar, the engine's principal variation, and a green arrow for the better move.
-- **Hint-free play.** "Show coach during play" can be switched off. The coach output then appears only after the game ends.
+- **Hint button.** Available on any of your moves, including when reviewing an earlier position. Each press reveals more: first the idea ("look for a fork"), then the piece to move (circled), then the move itself (arrow, eval and line). Hints work even with the coach hidden. The number of hints used is shown and saved in the PGN.
+- **Tactics and strategy tips.** A Tips card lists what matters in the current position. Tactics include mate threats, pieces in danger, loose enemy pieces, pins, fork chances and back-rank weaknesses. Strategy covers development, castling, the center, king activity, passed pawns, open files, the bishop pair and pawn weaknesses. Click a tip to circle its squares on the board.
+- **Lessons.** Explanations of your weaker moves end with a short general tip matched to the error, such as a blunder check after hanging a piece.
+- **Hint-free play.** "Show coach and tips during play" can be switched off. Explanations, tips, the eval bar and arrows then appear only after the game ends. The Hint button still works when you ask for it.
 - **Takebacks and branching.** Unlimited takebacks, with a counter. Click any move to review it, and play from an earlier position to branch (you're asked to confirm first).
 - **Standard game handling.** Checkmate, stalemate, threefold repetition, insufficient material and the 50-move rule are detected. Includes a promotion picker, PGN export with classification comments, and auto-save to `localStorage`.
 
@@ -80,6 +83,12 @@ Classification thresholds and analysis depth are in **`src/config/coach.ts`**.
 - **Labels.** Best ≤ 10 cp (or the engine's top move), Good ≤ 50, Inaccuracy ≤ 100, Mistake ≤ 250, Blunder above that.
 - **Explanations.** These come from `src/coach/ruleBased.ts`, using facts computed in `src/coach/facts.ts` with chess.js: pieces left hanging, forks, captures and mates allowed by the opponent's best reply, missed captures, forks and mates, castling rights given up, and material over the next few moves of each line. For bot moves, it writes one line on the idea: develops, captures, attacks X, defends Y, threatens mate, and so on.
 
+### Hints and tips
+
+- **Hints** (`src/coach/hints.ts`) come from the coach's analysis of the current position. Level 1 names the theme of the engine's best move without giving it away: mate, getting out of check, winning a loose piece, an opponent's mate threat, a threatened piece, a fork, a capture, a check, castling, development, passed pawns or the center. Level 2 names the piece and level 3 shows the move. Press **H** as a shortcut.
+- **Tips** (`src/coach/tips.ts`) come from chess.js only, so they appear instantly with no engine call. Tactics are capped at 4 and strategy at 3. When nothing specific applies, a general principle for the game phase is shown instead.
+- The detectors (pins, mate threats via a "what if I passed?" position, pawn structure, open files, back rank, game phase) live in `src/coach/facts.ts`.
+
 ### Adding an LLM explanation provider later
 
 Explanations go through the `ExplanationProvider` interface in `src/coach/provider.ts`:
@@ -112,7 +121,9 @@ src/
   coach/review.ts      scores a played move from before/after analyses
   coach/facts.ts       tactical facts (hanging pieces, forks, material, castling)
   coach/provider.ts    ExplanationProvider interface
-  coach/ruleBased.ts   rule-based explanations
+  coach/ruleBased.ts   rule-based explanations and lessons
+  coach/hints.ts       three-level hints
+  coach/tips.ts        tactics and strategy tips
   game/session.ts      game state, takebacks, branching, result detection
   game/pgn.ts          PGN export with comments
   game/persistence.ts  localStorage

@@ -5,6 +5,8 @@ import './styles.css';
 
 import { chooseBotMove } from './bot/bot';
 import { COACH_CONFIG } from './config/coach';
+import { HINT_LEVELS, buildHints, type HintStep } from './coach/hints';
+import { strategicTips, tacticalTips, type Tip } from './coach/tips';
 import { clampElo } from './config/strength';
 import type { ExplanationProvider } from './coach/provider';
 import { scoreMove, terminalScore } from './coach/review';
@@ -15,7 +17,9 @@ import { exportPgn } from './game/pgn';
 import { Session, newGameState } from './game/session';
 import type { Color, PlyRecord } from './types';
 import { Board, type BoardView } from './ui/board';
-import { moveLabel, renderEvalBar, renderExplanation, renderMoves, type ExplainView } from './ui/panel';
+import {
+  moveLabel, renderEvalBar, renderExplanation, renderHint, renderMoves, renderTips, type ExplainView,
+} from './ui/panel';
 import { pickPromotion } from './ui/promotion';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -42,6 +46,11 @@ class App {
   previewBetter = false;
   /** After a takeback: the undone user move, used to show what was better from here. */
   undone: PlyRecord | null = null;
+  /** Hint levels revealed for a position (keyed by FEN so it survives navigating away and back). */
+  hint: { fen: string; level: number } | null = null;
+  /** Tip whose squares are highlighted on the board. */
+  focusedTip: { fen: string; tip: Tip } | null = null;
+  tipCache = new Map<string, { tactics: Tip[]; strategy: Tip[] }>();
 
   analyses = new Map<string, Promise<Analysis>>();
   resolved = new Map<string, Analysis>();
@@ -94,6 +103,9 @@ class App {
     this.resolved.clear();
     this.session = new Session(newGameState(this.pickColor(), this.settings.elo));
     this.orientation = this.userColor;
+    this.hint = null;
+    this.focusedTip = null;
+    this.tipCache.clear();
     this.persist();
     this.render();
     this.resume();
@@ -132,12 +144,15 @@ class App {
       this.invalidate();
     }
     this.undone = null;
-    if (!s.play({ from, to, promotion }, 'user')) return this.render();
+    const ply = s.play({ from, to, promotion }, 'user');
+    if (!ply) return this.render();
+    if (this.hint?.fen === ply.fenBefore) ply.hint = this.hint.level;
     this.afterPly();
   }
 
   afterPly(): void {
     this.previewBetter = false;
+    this.focusedTip = null;
     this.persist();
     this.render();
     this.resume();
@@ -197,6 +212,50 @@ class App {
     this.undone = null;
     s.truncate();
     this.afterPly();
+  }
+
+  // ------------------------------------------------------------ hints and tips
+
+  /** Hints are for the user's turn, in the game or when reviewing an earlier position. */
+  canHint(): boolean {
+    const s = this.session;
+    return !this.previewBetter && s.turnAt() === this.userColor && !(s.atLatest && (s.isOver() || this.botThinking));
+  }
+
+  hintLevel(fen: string): number {
+    return this.hint?.fen === fen ? this.hint.level : 0;
+  }
+
+  requestHint(): void {
+    if (!this.canHint()) return;
+    const s = this.session;
+    const fen = s.fenAt();
+    const level = this.hintLevel(fen);
+    if (level >= HINT_LEVELS) return;
+    if (level === 0 && s.atLatest) {
+      s.state.hintsUsed = (s.state.hintsUsed ?? 0) + 1;
+      this.persist();
+    }
+    this.hint = { fen, level: level + 1 };
+    this.render();
+    this.analyze(fen).catch(() => {});
+  }
+
+  hintView(fen: string): { steps: HintStep[]; pending: boolean } {
+    const level = this.hintLevel(fen);
+    if (level === 0) return { steps: [], pending: false };
+    const a = this.resolved.get(fen);
+    if (!a) return { steps: [], pending: true };
+    return { steps: buildHints(fen, a, this.userColor).slice(0, level), pending: false };
+  }
+
+  tipsFor(fen: string): { tactics: Tip[]; strategy: Tip[] } {
+    let t = this.tipCache.get(fen);
+    if (!t) {
+      t = { tactics: tacticalTips(fen, this.userColor), strategy: strategicTips(fen, this.userColor) };
+      this.tipCache.set(fen, t);
+    }
+    return t;
   }
 
   // ------------------------------------------------------------ analysis
@@ -282,6 +341,16 @@ class App {
       shapes.push({ from: undone.review.bestUci.slice(0, 2), to: undone.review.bestUci.slice(2, 4), brush: 'green' });
       shapes.push({ from: undone.uci.slice(0, 2), to: undone.uci.slice(2, 4), brush: 'paleRed' });
     }
+    // Hints are shown even with the coach hidden: the user asked for them.
+    const hint = preview ? { steps: [], pending: false } : this.hintView(fen);
+    const hintShapes: BoardView['shapes'] = [];
+    for (const st of hint.steps) {
+      for (const c of st.circles) hintShapes.push({ from: c, brush: st.level === 1 ? 'yellow' : 'green' });
+      if (st.arrow) hintShapes.push({ from: st.arrow.from, to: st.arrow.to, brush: 'blue' });
+    }
+    const focus = coach && this.focusedTip?.fen === fen ? this.focusedTip.tip : null;
+    if (focus) for (const sq of focus.squares) shapes.push({ from: sq, brush: focus.kind === 'tactic' ? 'red' : 'paleBlue' });
+
     const turn = fen.split(' ')[1] as Color;
     const userCanMove = !preview && turn === this.userColor && !(s.atLatest && (over || this.botThinking));
     const chess = s.chessAt();
@@ -293,7 +362,7 @@ class App {
       dests: userCanMove ? s.legalDests() : new Map(),
       lastMove,
       check: !preview && chess.inCheck(),
-      shapes: coach ? shapes : [],
+      shapes: [...(coach ? shapes : []), ...hintShapes],
     });
 
     // Eval bar: the viewed position's eval.
@@ -308,8 +377,27 @@ class App {
 
     // Status
     $('status').textContent = this.statusText();
+    const hints = s.state.hintsUsed ?? 0;
     $('game-info').textContent =
-      `You play ${colorName(this.userColor)} against the coach at ${s.state.elo} Elo.`;
+      `You play ${colorName(this.userColor)} against the coach at ${s.state.elo} Elo.` +
+      (hints ? ` Hints used: ${hints}.` : '');
+    const level = this.hintLevel(fen);
+    const hintBtn = $<HTMLButtonElement>('btn-hint');
+    hintBtn.disabled = !this.canHint() || level >= HINT_LEVELS;
+    hintBtn.textContent = ['Hint', 'More help', 'Show the move', 'Hint'][level];
+    renderHint($('hint'), hint);
+    const tips = this.tipsFor(fen);
+    renderTips($('tips'), {
+      hidden: !coach,
+      tactics: tips.tactics,
+      strategy: tips.strategy,
+      focused: focus,
+      onSelect: (tip) => {
+        const same = this.focusedTip?.fen === fen && this.focusedTip.tip === tip;
+        this.focusedTip = same || !tip.squares.length ? null : { fen, tip };
+        this.render();
+      },
+    });
     $('takeback-count').textContent = String(s.state.takebacks);
     $<HTMLButtonElement>('btn-takeback').disabled = s.takebackSize() === 0;
     $<HTMLButtonElement>('btn-resign').disabled = !!over;
@@ -374,6 +462,7 @@ class App {
 
   bindUi(): void {
     $('btn-new').addEventListener('click', () => this.openNewGameDialog(false));
+    $('btn-hint').addEventListener('click', () => this.requestHint());
     $('btn-takeback').addEventListener('click', () => this.takeBack());
     $('btn-flip').addEventListener('click', () => {
       this.orientation = this.orientation === 'w' ? 'b' : 'w';
@@ -408,6 +497,8 @@ class App {
       if (keys[e.key]) {
         e.preventDefault();
         nav(keys[e.key]());
+      } else if (e.key === 'h' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        this.requestHint();
       }
     });
 

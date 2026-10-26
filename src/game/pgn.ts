@@ -3,10 +3,15 @@ import { formatEval } from '../coach/format';
 import type { GameState, MoveReview } from '../types';
 import { parseUci, resultOf } from './session';
 
-function reviewComment(r: MoveReview): string {
-  let c = `${r.classification} (${formatEval(r.evalAfter)})`;
-  if (r.classification !== 'Best' && r.bestSan) c += `. Best was ${r.bestSan} (${formatEval(r.evalBefore)})`;
-  return c;
+function reviewComment(r: MoveReview | undefined, hint: number | undefined): string {
+  const parts: string[] = [];
+  if (r) {
+    let c = `${r.classification} (${formatEval(r.evalAfter)})`;
+    if (r.classification !== 'Best' && r.bestSan) c += `. Best was ${r.bestSan} (${formatEval(r.evalBefore)})`;
+    parts.push(c);
+  }
+  if (hint) parts.push(`Hint used (level ${hint})`);
+  return parts.join('. ');
 }
 
 /** PGN of the game, with each move's coach classification as a comment. */
@@ -32,10 +37,12 @@ export function exportPgn(state: GameState): string {
   }
   if (result) chess.setHeader('Termination', result.reason);
   chess.setHeader('Takebacks', String(state.takebacks));
+  chess.setHeader('Hints', String(state.hintsUsed ?? 0));
 
   for (const p of state.plies) {
     chess.move(parseUci(p.uci));
-    if (p.review) chess.setComment(reviewComment(p.review));
+    const comment = reviewComment(p.review, p.hint);
+    if (comment) chess.setComment(comment);
   }
   let pgn = chess.pgn({ maxWidth: 80 });
   // chess.js only writes the result token from the Result header when the game is over by rule.

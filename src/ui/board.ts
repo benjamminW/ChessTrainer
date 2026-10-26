@@ -13,7 +13,8 @@ export interface BoardView {
   dests: Map<string, string[]>;
   lastMove: [string, string] | null;
   check: boolean;
-  shapes: { from: string; to: string; brush: string }[];
+  /** Arrows (from → to) or circles (no `to`). */
+  shapes: { from: string; to?: string; brush: string }[];
 }
 
 const cgColor = (c: Color) => (c === 'w' ? 'white' : 'black');
@@ -35,7 +36,11 @@ export class Board {
   }
 
   render(v: BoardView): void {
-    const shapes: DrawShape[] = v.shapes.map((s) => ({ orig: s.from as Key, dest: s.to as Key, brush: s.brush }));
+    const shapes: DrawShape[] = v.shapes.map((s) => ({
+      orig: s.from as Key,
+      dest: s.to ? (s.to as Key) : undefined,
+      brush: s.brush,
+    }));
     this.cg.set({
       fen: v.fen.split(' ')[0],
       orientation: cgColor(v.orientation),

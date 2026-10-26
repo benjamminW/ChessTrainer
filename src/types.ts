@@ -25,6 +25,8 @@ export interface Explanation {
   pvSan: string[];
   /** For non-best moves by the user: the engine's preferred line, in SAN. */
   betterLineSan?: string[];
+  /** A general lesson matching the error (e.g. "Blunder check: …"). */
+  tip?: string;
 }
 
 export interface PlyRecord {
@@ -35,6 +37,8 @@ export interface PlyRecord {
   fenBefore: string;
   fenAfter: string;
   review?: MoveReview;
+  /** Highest hint level the user looked at before playing this move (1–3). */
+  hint?: number;
 }
 
 export type ResultReason =
@@ -58,6 +62,8 @@ export interface GameState {
   elo: number;
   plies: PlyRecord[];
   takebacks: number;
+  /** Positions where the user asked for a hint. Missing in games saved before hints existed. */
+  hintsUsed?: number;
   resigned: Color | null;
   startedAt: string;
 }

@@ -21,6 +21,7 @@ export function newGameState(userColor: Color, elo: number, startFen = DEFAULT_P
     elo,
     plies: [],
     takebacks: 0,
+    hintsUsed: 0,
     resigned: null,
     startedAt: new Date().toISOString(),
   };

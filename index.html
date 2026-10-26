@@ -38,21 +38,28 @@
           <p id="status" class="status" role="status"></p>
           <p id="game-info" class="muted small"></p>
           <div class="controls">
+            <button type="button" class="btn hint-btn" id="btn-hint" title="Hint (H)">Hint</button>
             <button type="button" class="btn primary" id="btn-new">New game</button>
             <button type="button" class="btn" id="btn-takeback">Take back <span id="takeback-count" class="count">0</span></button>
             <button type="button" class="btn" id="btn-flip">Flip board</button>
             <button type="button" class="btn" id="btn-resign">Resign</button>
             <button type="button" class="btn" id="btn-pgn">Export PGN</button>
           </div>
+          <div id="hint" class="hint" aria-live="polite" hidden></div>
           <label class="toggle">
             <input type="checkbox" id="coach-toggle" />
-            <span>Show coach during play</span>
+            <span>Show coach and tips during play</span>
           </label>
         </section>
 
         <section class="card explain" aria-label="Coach" aria-live="polite">
           <h2>Coach</h2>
           <div id="explain"></div>
+        </section>
+
+        <section class="card tips" aria-label="Tips">
+          <h2>Tips</h2>
+          <div id="tips"></div>
         </section>
 
         <section class="card moves-card" aria-label="Moves">

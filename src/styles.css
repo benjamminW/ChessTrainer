@@ -233,6 +233,51 @@ h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color
 }
 #explain p:last-child { margin-bottom: 0; }
 
+/* lessons, hints, tips */
+.lesson {
+  margin: 8px 0;
+  padding: 6px 10px;
+  border-left: 3px solid var(--accent);
+  background: var(--hover);
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+.lesson-label, .hint-label {
+  display: inline-block;
+  margin-right: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent);
+}
+.hint-btn { border-color: var(--inaccuracy); }
+.hint { margin-top: 12px; padding: 8px 10px; border-radius: 6px; background: var(--hover); font-size: 0.9rem; }
+.hint[hidden] { display: none; }
+.hint-step { margin: 0 0 4px; }
+.hint-step:last-child { margin-bottom: 0; }
+.hint-mark { margin-left: 3px; color: var(--inaccuracy); font-weight: 700; }
+
+.tips h3 { margin: 10px 0 6px; font-size: 0.85rem; font-weight: 600; }
+.tips h3:first-of-type { margin-top: 0; }
+.tip-list { display: flex; flex-direction: column; gap: 6px; }
+.tip {
+  font: inherit;
+  font-size: 0.88rem;
+  text-align: left;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--mistake);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+.tip-strategy { border-left-color: var(--best); }
+.tip:hover { background: var(--hover); }
+.tip.focused { background: var(--current); }
+.tip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
 /* move list */
 .moves { position: relative; max-height: 300px; overflow-y: auto; font-variant-numeric: tabular-nums; }
 .move-row { display: grid; grid-template-columns: 36px 1fr 1fr; align-items: center; }
