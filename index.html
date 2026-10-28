@@ -55,7 +55,7 @@
           </label>
           <label class="toggle">
             <input type="checkbox" id="review-toggle" />
-            <span>Open game review when the game ends</span>
+            <span>Offer a game review when the game ends</span>
           </label>
           <div class="appearance">
             <label>
@@ -69,14 +69,16 @@
           </div>
         </section>
 
+        <section class="card walk-card" id="walkthrough" aria-label="Move-by-move review" aria-live="polite" hidden></section>
+
         <section class="card review-card" id="review" aria-label="Game review" hidden></section>
 
-        <section class="card explain" aria-label="Coach" aria-live="polite">
+        <section class="card explain" id="coach-card" aria-label="Coach" aria-live="polite">
           <h2>Coach</h2>
           <div id="explain"></div>
         </section>
 
-        <section class="card tips" aria-label="Tips">
+        <section class="card tips" id="tips-card" aria-label="Tips">
           <h2>Tips</h2>
           <div id="tips"></div>
         </section>
@@ -104,6 +106,19 @@
         <div class="dialog-actions">
           <button type="submit" value="cancel" class="btn" id="ng-cancel">Cancel</button>
           <button type="submit" value="start" class="btn primary">Start</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="review-prompt" aria-labelledby="rp-title">
+      <form method="dialog" class="dialog-form">
+        <h2 id="rp-title">Game over</h2>
+        <p id="rp-result" class="status"></p>
+        <p id="rp-text"></p>
+        <div class="dialog-actions">
+          <button type="submit" value="cancel" class="btn">Not now</button>
+          <button type="submit" value="summary" class="btn">Just the summary</button>
+          <button type="submit" value="walk" class="btn primary">Go through it move by move</button>
         </div>
       </form>
     </dialog>

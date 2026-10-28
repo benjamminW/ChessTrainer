@@ -28,6 +28,7 @@ import {
 import { pickPromotion } from './ui/promotion';
 import { buildGameReview } from './coach/gameReview';
 import { renderReviewCard } from './ui/reviewCard';
+import { BAD_CLASSES, nextMistake, renderWalkthrough } from './ui/walkthrough';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -60,6 +61,8 @@ class App {
   tipCache = new Map<string, { tactics: Tip[]; strategy: Tip[] }>();
   /** Whether the game review card is open (only shown once the game is over). */
   reviewOpen = false;
+  /** Ply index being explained in the move-by-move review, or null when not in it. */
+  walk: number | null = null;
 
   analyses = new Map<string, Promise<Analysis>>();
   resolved = new Map<string, Analysis>();
@@ -133,6 +136,7 @@ class App {
   invalidate(): void {
     this.gen++;
     this.reviewOpen = false; // a takeback or branch reopens the game, so the review closes
+    this.walk = null;
     this.botEngine.cancelAll();
     this.botThinking = false;
     this.previewBetter = false;
@@ -219,11 +223,71 @@ class App {
   }
 
   /** When a game has just ended, open the review if the user turned that on. */
+  /** When a game has just ended, offer the review (if the user turned that on). */
   openReviewIfOver(): void {
-    if (this.session.isOver() && this.settings.autoReview) {
+    if (!this.session.isOver() || !this.settings.autoReview) return;
+    this.session.goTo(this.session.plies.length);
+    void this.askToReview();
+  }
+
+  async askToReview(): Promise<void> {
+    const dlg = $<HTMLDialogElement>('review-prompt');
+    if (dlg.open) return;
+    $('rp-result').textContent = this.statusText();
+    $('rp-text').textContent =
+      'Want to go through the game move by move? The coach will step through every move and, ' +
+      'at each of your mistakes, show what you could have done better.';
+    dlg.returnValue = '';
+    dlg.showModal();
+    await new Promise((resolve) => (dlg.onclose = resolve));
+    if (!this.session.isOver()) return;
+    if (dlg.returnValue === 'walk') this.startWalkthrough();
+    else if (dlg.returnValue === 'summary') {
       this.reviewOpen = true;
-      this.session.goTo(this.session.plies.length);
+      this.render();
     }
+  }
+
+  // ------------------------------------------------------------ move-by-move review
+
+  isUserMistake(i: number): boolean {
+    const p = this.session.plies[i];
+    return !!p && p.color === this.userColor && !!p.review && BAD_CLASSES.includes(p.review.classification);
+  }
+
+  startWalkthrough(): void {
+    if (!this.session.isOver() || this.session.plies.length === 0) return;
+    this.reviewOpen = false;
+    this.walkGo(0);
+    $('walkthrough').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  /** Shows ply `i`: the position after it, or for your mistakes the position before it with the better move. */
+  walkGo(i: number): void {
+    const s = this.session;
+    this.walk = Math.max(0, Math.min(s.plies.length - 1, i));
+    s.goTo(this.walk + 1);
+    this.previewBetter = this.isUserMistake(this.walk);
+    this.render();
+  }
+
+  exitWalkthrough(): void {
+    this.walk = null;
+    this.previewBetter = false;
+    this.session.goTo(this.session.plies.length);
+    this.reviewOpen = true;
+    this.render();
+  }
+
+  /** Leave the review at the position before this move so the user can play it differently. */
+  walkTry(): void {
+    if (this.walk === null) return;
+    const i = this.walk;
+    this.walk = null;
+    this.reviewOpen = false;
+    this.previewBetter = false;
+    this.session.goTo(i);
+    this.render();
   }
 
   async continueFromHere(): Promise<void> {
@@ -241,7 +305,9 @@ class App {
   /** Hints are for the user's turn, in the game or when reviewing an earlier position. */
   canHint(): boolean {
     const s = this.session;
-    return !this.previewBetter && s.turnAt() === this.userColor && !(s.atLatest && (s.isOver() || this.botThinking));
+    return (
+      this.walk === null && !this.previewBetter && s.turnAt() === this.userColor && !(s.atLatest && (s.isOver() || this.botThinking))
+    );
   }
 
   hintLevel(fen: string): number {
@@ -374,7 +440,10 @@ class App {
     if (focus) for (const sq of focus.squares) shapes.push({ from: sq, brush: focus.kind === 'tactic' ? 'red' : 'paleBlue' });
 
     const turn = fen.split(' ')[1] as Color;
-    const userCanMove = !preview && turn === this.userColor && !(s.atLatest && (over || this.botThinking));
+    if (this.walk !== null && (!over || this.walk >= s.plies.length)) this.walk = null;
+    const walking = this.walk !== null;
+    const userCanMove =
+      !walking && !preview && turn === this.userColor && !(s.atLatest && (over || this.botThinking));
     const chess = s.chessAt();
     this.board.render({
       fen,
@@ -441,12 +510,37 @@ class App {
     $<HTMLButtonElement>('nav-next').disabled = s.atLatest;
     $<HTMLButtonElement>('nav-last').disabled = s.atLatest;
     // Any earlier position can become the new end of the game, whoever is to move there.
-    $('continue-here').hidden = s.atLatest;
+    $('continue-here').hidden = s.atLatest || this.walk !== null;
     $<HTMLInputElement>('coach-toggle').checked = this.settings.coachDuringPlay;
     $<HTMLInputElement>('review-toggle').checked = this.settings.autoReview;
 
     // Game review (once the game is over)
-    const showReview = this.reviewOpen && !!over;
+    const showReview = this.reviewOpen && !!over && !walking;
+    const gameReview = over && (showReview || walking) ? buildGameReview(s.plies, this.userColor) : null;
+    $('coach-card').hidden = walking;
+    $('tips-card').hidden = walking;
+    const walkEl = $('walkthrough');
+    walkEl.hidden = !walking;
+    if (walking && gameReview) {
+      renderWalkthrough(walkEl, {
+        plies: s.plies,
+        step: this.walk!,
+        userColor: this.userColor,
+        moments: gameReview.moments,
+        previewOn: preview,
+        onTogglePreview: () => {
+          this.previewBetter = !this.previewBetter;
+          this.render();
+        },
+        onGo: (i) => this.walkGo(i),
+        onNextMistake: () => {
+          const next = nextMistake(s.plies, this.walk ?? -1, this.userColor);
+          if (next !== null) this.walkGo(next);
+        },
+        onTry: () => this.walkTry(),
+        onExit: () => this.exitWalkthrough(),
+      });
+    }
     const reviewBtn = $<HTMLButtonElement>('btn-review');
     reviewBtn.disabled = !over;
     reviewBtn.textContent = showReview ? 'Hide review' : 'Game review';
@@ -455,7 +549,8 @@ class App {
     reviewEl.hidden = !showReview;
     if (showReview && over) {
       renderReviewCard(reviewEl, {
-        review: buildGameReview(s.plies, this.userColor),
+        review: gameReview!,
+        onWalk: () => this.startWalkthrough(),
         result: over,
         userColor: this.userColor,
         elo: s.state.elo,
@@ -507,6 +602,7 @@ class App {
     renderExplanation($('explain'), view);
 
     renderMoves($('moves'), s.plies, s.cursor, coach, (n) => {
+      if (this.walk !== null) return this.walkGo(n - 1);
       this.previewBetter = false;
       s.goTo(n);
       this.render();
@@ -516,6 +612,7 @@ class App {
   statusText(): string {
     if (this.engineError) return `Engine error: ${this.engineError}`;
     const s = this.session;
+    if (this.walk !== null) return `Move-by-move review: move ${this.walk + 1} of ${s.plies.length}. Use ← → to step through.`;
     const r = s.result();
     const viewing = s.cursor > 0 ? moveLabel(s.plies[s.cursor - 1]) : 'the start';
     if (r) {
@@ -577,6 +674,8 @@ class App {
     });
 
     const nav = (n: number) => {
+      // In the move-by-move review the board buttons step through the review instead.
+      if (this.walk !== null) return this.walkGo(n - 1);
       this.previewBetter = false;
       this.session.goTo(n);
       this.render();
@@ -587,6 +686,21 @@ class App {
     $('nav-last').addEventListener('click', () => nav(this.session.plies.length));
     document.addEventListener('keydown', (e) => {
       if (document.querySelector('dialog[open]') || (e.target as HTMLElement).closest('input, textarea, select')) return;
+      if (this.walk !== null) {
+        const step = this.walk;
+        const go: Record<string, () => void> = {
+          ArrowLeft: () => this.walkGo(step - 1),
+          ArrowRight: () => (step >= this.session.plies.length - 1 ? this.exitWalkthrough() : this.walkGo(step + 1)),
+          Home: () => this.walkGo(0),
+          End: () => this.walkGo(this.session.plies.length - 1),
+          Escape: () => this.exitWalkthrough(),
+        };
+        if (go[e.key]) {
+          e.preventDefault();
+          go[e.key]();
+        }
+        return;
+      }
       const keys: Record<string, () => number> = {
         ArrowLeft: () => this.session.cursor - 1,
         ArrowRight: () => this.session.cursor + 1,

@@ -11,6 +11,8 @@ export interface ReviewCardView {
   /** Ply count currently shown on the board (cursor), to mark it on the graph. */
   cursor: number;
   onClose: () => void;
+  /** Start the move-by-move review. */
+  onWalk: () => void;
   /** Jump to the position after ply `index` with the better move shown. */
   onShow: (index: number) => void;
   /** Jump to the position before ply `index` to try a better move. */
@@ -117,6 +119,7 @@ export function renderReviewCard(el: HTMLElement, v: ReviewCardView): void {
       h('button', { type: 'button', class: 'btn small', onclick: v.onClose, 'aria-label': 'Close game review' }, 'Close'),
     ),
     h('p', { class: 'status' }, resultLine(v.result, v.userColor)),
+    h('button', { type: 'button', class: 'btn primary walk-start', onclick: v.onWalk }, 'Go through it move by move'),
   );
   if (r.pending > 0) {
     el.append(h('p', { class: 'muted small' }, `Analyzing ${r.pending} more move${r.pending === 1 ? '' : 's'}… the review fills in as they finish.`));

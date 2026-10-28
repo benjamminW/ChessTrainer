@@ -1,0 +1,5 @@
+node_modules
+dist
+# Copied from node_modules/stockfish by scripts/copy-engine.mjs
+public/engine
+.DS_Store
