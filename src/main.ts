@@ -26,6 +26,8 @@ import {
   type ExplainView,
 } from './ui/panel';
 import { pickPromotion } from './ui/promotion';
+import { buildGameReview } from './coach/gameReview';
+import { renderReviewCard } from './ui/reviewCard';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -56,6 +58,8 @@ class App {
   /** Tip whose squares are highlighted on the board. */
   focusedTip: { fen: string; tip: Tip } | null = null;
   tipCache = new Map<string, { tactics: Tip[]; strategy: Tip[] }>();
+  /** Whether the game review card is open (only shown once the game is over). */
+  reviewOpen = false;
 
   analyses = new Map<string, Promise<Analysis>>();
   resolved = new Map<string, Analysis>();
@@ -104,6 +108,7 @@ class App {
 
   startNewGame(): void {
     this.invalidate();
+    this.reviewOpen = false;
     this.coachEngine.cancelAll();
     this.analyses.clear();
     this.resolved.clear();
@@ -127,6 +132,7 @@ class App {
 
   invalidate(): void {
     this.gen++;
+    this.reviewOpen = false; // a takeback or branch reopens the game, so the review closes
     this.botEngine.cancelAll();
     this.botThinking = false;
     this.previewBetter = false;
@@ -159,6 +165,7 @@ class App {
   afterPly(): void {
     this.previewBetter = false;
     this.focusedTip = null;
+    this.openReviewIfOver();
     this.persist();
     this.render();
     this.resume();
@@ -206,8 +213,17 @@ class App {
     if (!(await this.confirm('Resign this game?', 'Resign'))) return;
     this.invalidate();
     this.session.resign();
+    this.openReviewIfOver();
     this.persist();
     this.render();
+  }
+
+  /** When a game has just ended, open the review if the user turned that on. */
+  openReviewIfOver(): void {
+    if (this.session.isOver() && this.settings.autoReview) {
+      this.reviewOpen = true;
+      this.session.goTo(this.session.plies.length);
+    }
   }
 
   async continueFromHere(): Promise<void> {
@@ -427,6 +443,44 @@ class App {
     // Any earlier position can become the new end of the game, whoever is to move there.
     $('continue-here').hidden = s.atLatest;
     $<HTMLInputElement>('coach-toggle').checked = this.settings.coachDuringPlay;
+    $<HTMLInputElement>('review-toggle').checked = this.settings.autoReview;
+
+    // Game review (once the game is over)
+    const showReview = this.reviewOpen && !!over;
+    const reviewBtn = $<HTMLButtonElement>('btn-review');
+    reviewBtn.disabled = !over;
+    reviewBtn.textContent = showReview ? 'Hide review' : 'Game review';
+    reviewBtn.setAttribute('aria-pressed', showReview ? 'true' : 'false');
+    const reviewEl = $('review');
+    reviewEl.hidden = !showReview;
+    if (showReview && over) {
+      renderReviewCard(reviewEl, {
+        review: buildGameReview(s.plies, this.userColor),
+        result: over,
+        userColor: this.userColor,
+        elo: s.state.elo,
+        cursor: s.cursor,
+        onClose: () => {
+          this.reviewOpen = false;
+          this.render();
+        },
+        onShow: (i) => {
+          s.goTo(i + 1);
+          this.previewBetter = true;
+          this.render();
+        },
+        onRetry: (i) => {
+          s.goTo(i);
+          this.previewBetter = false;
+          this.render();
+        },
+        onSeek: (n) => {
+          s.goTo(n);
+          this.previewBetter = false;
+          this.render();
+        },
+      });
+    }
 
     // Explanation
     const view: ExplainView = { kind: 'start' };
@@ -463,15 +517,17 @@ class App {
     if (this.engineError) return `Engine error: ${this.engineError}`;
     const s = this.session;
     const r = s.result();
+    const viewing = s.cursor > 0 ? moveLabel(s.plies[s.cursor - 1]) : 'the start';
     if (r) {
       const youWon = (r.score === '1-0' && this.userColor === 'w') || (r.score === '0-1' && this.userColor === 'b');
-      if (r.reason === 'resignation') return 'You resigned. The coach wins.';
-      if (r.score === '1/2-1/2') return `Draw by ${r.reason}.`;
-      return `${r.reason === 'checkmate' ? 'Checkmate' : r.reason}. ${youWon ? 'You win!' : 'The coach wins.'}`;
+      const result =
+        r.reason === 'resignation' ? 'You resigned. The coach wins.'
+        : r.score === '1/2-1/2' ? `Draw by ${r.reason}.`
+        : `${r.reason === 'checkmate' ? 'Checkmate' : r.reason}. ${youWon ? 'You win!' : 'The coach wins.'}`;
+      return s.atLatest ? result : `${result} Viewing the position after ${viewing}.`;
     }
     if (!s.atLatest) {
-      const p = s.cursor > 0 ? moveLabel(s.plies[s.cursor - 1]) : 'the start';
-      return `Reviewing after ${p}. Press End or ⏭ to return to the game.`;
+      return `Reviewing after ${viewing}. Press End or ⏭ to return to the game.`;
     }
     if (this.botThinking) return 'Coach is thinking…';
     const inCheck = s.chessAt().inCheck();
@@ -505,6 +561,15 @@ class App {
     $('btn-resign').addEventListener('click', () => void this.resign());
     $('btn-pgn').addEventListener('click', () => this.downloadPgn());
     $('continue-here').addEventListener('click', () => void this.continueFromHere());
+    $('btn-review').addEventListener('click', () => {
+      this.reviewOpen = !this.reviewOpen;
+      this.render();
+      if (this.reviewOpen) $('review').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+    $<HTMLInputElement>('review-toggle').addEventListener('change', (e) => {
+      this.settings.autoReview = (e.target as HTMLInputElement).checked;
+      saveSettings(this.settings);
+    });
     $<HTMLInputElement>('coach-toggle').addEventListener('change', (e) => {
       this.settings.coachDuringPlay = (e.target as HTMLInputElement).checked;
       saveSettings(this.settings);
