@@ -329,6 +329,54 @@ h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color
 .tip.focused { background: var(--current); }
 .tip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
+/* game review */
+.review-card[hidden] { display: none; }
+.review-card { border-color: var(--accent); }
+.review-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.review-head h2 { margin: 0; }
+.review-card h3 { margin: 14px 0 6px; font-size: 0.85rem; font-weight: 600; }
+.review-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; font-variant-numeric: tabular-nums; margin: 6px 0 10px; }
+.review-table th, .review-table td { padding: 3px 4px; text-align: center; }
+.review-table thead th { font-size: 0.72rem; font-weight: 600; color: var(--muted); }
+.review-table tbody th { text-align: left; font-weight: 600; white-space: nowrap; }
+.review-table .acc { font-weight: 700; }
+.review-table .cnt.zero { color: var(--muted); opacity: 0.5; }
+.review-table .cnt.cls-best { color: var(--best); font-weight: 700; }
+.review-table .cnt.cls-good { color: var(--good); font-weight: 700; }
+.review-table .cnt.cls-inaccuracy { color: var(--inaccuracy); font-weight: 700; }
+.review-table .cnt.cls-mistake { color: var(--mistake); font-weight: 700; }
+.review-table .cnt.cls-blunder { color: var(--blunder); font-weight: 700; }
+
+.eval-graph { display: block; width: 100%; height: 80px; border-radius: 6px; overflow: hidden; cursor: pointer; }
+.eval-graph .g-black { fill: #403d39; }
+.eval-graph .g-white { fill: #f3f2ee; }
+.eval-graph .g-mid { stroke: #8a8780; stroke-width: 0.6; stroke-dasharray: 3 3; }
+.eval-graph .g-cursor { stroke: var(--accent); stroke-width: 1.5; }
+.eval-graph .g-dot { stroke: #fff; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.eval-graph .g-dot.cls-inaccuracy { fill: var(--inaccuracy); }
+.eval-graph .g-dot.cls-mistake { fill: var(--mistake); }
+.eval-graph .g-dot.cls-blunder { fill: var(--blunder); }
+
+.review-summary { margin: 10px 0; padding-left: 18px; font-size: 0.9rem; }
+.review-summary li { margin-bottom: 4px; }
+.phases { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; font-size: 0.85rem; }
+.phase { display: grid; grid-template-columns: 90px 1fr 42px; align-items: center; gap: 8px; }
+.phase-bar { height: 8px; border-radius: 4px; background: var(--hover); overflow: hidden; }
+.phase-bar span { display: block; height: 100%; background: var(--accent); }
+.phase-acc { text-align: right; font-variant-numeric: tabular-nums; }
+
+.moments { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.moment { border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; }
+.moment-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.moment p { margin: 4px 0; font-size: 0.88rem; }
+.moment-better { font-weight: 600; }
+.moment-tip { color: var(--muted); }
+.moment-actions { display: flex; gap: 6px; margin-top: 6px; }
+.moment-actions .btn { margin-top: 0; }
+.tag { font-size: 0.7rem; font-weight: 700; padding: 1px 6px; border-radius: 8px; text-transform: uppercase; letter-spacing: 0.04em; }
+.tag-turn { background: var(--blunder); color: #fff; }
+.tag-missed { background: var(--inaccuracy); color: #1c1b1a; }
+
 /* move list */
 .moves { position: relative; max-height: 300px; overflow-y: auto; font-variant-numeric: tabular-nums; }
 .move-row { display: grid; grid-template-columns: 36px 1fr 1fr; align-items: center; }
