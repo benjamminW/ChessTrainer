@@ -46,11 +46,16 @@
             <button type="button" class="btn" id="btn-flip">Flip board</button>
             <button type="button" class="btn" id="btn-resign">Resign</button>
             <button type="button" class="btn" id="btn-pgn">Export PGN</button>
+            <button type="button" class="btn" id="btn-review" title="Available when the game is over">Game review</button>
           </div>
           <div id="hint" class="hint" aria-live="polite" hidden></div>
           <label class="toggle">
             <input type="checkbox" id="coach-toggle" />
             <span>Show coach and tips during play</span>
+          </label>
+          <label class="toggle">
+            <input type="checkbox" id="review-toggle" />
+            <span>Open game review when the game ends</span>
           </label>
           <div class="appearance">
             <label>
@@ -63,6 +68,8 @@
             </label>
           </div>
         </section>
+
+        <section class="card review-card" id="review" aria-label="Game review" hidden></section>
 
         <section class="card explain" aria-label="Coach" aria-live="polite">
           <h2>Coach</h2>
