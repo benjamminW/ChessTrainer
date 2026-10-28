@@ -9,6 +9,8 @@ export interface Settings {
   colorChoice: 'w' | 'b' | 'random';
   /** Show explanations, eval bar and arrows while the game is in progress. */
   coachDuringPlay: boolean;
+  /** Open the game review automatically when a game ends. */
+  autoReview: boolean;
   /** An id from BOARDS in src/themes/catalog.ts. */
   boardTheme: string;
   /** An id from PIECE_SETS in src/themes/catalog.ts. */
@@ -19,6 +21,7 @@ export const DEFAULT_SETTINGS: Settings = {
   elo: 1200,
   colorChoice: 'w',
   coachDuringPlay: true,
+  autoReview: true,
   boardTheme: 'brown',
   pieceSet: 'classic',
 };
