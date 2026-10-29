@@ -1,4 +1,4 @@
-import { label as plyLabel } from '../coach/gameReview';
+import { label as plyLabel, type PhaseStats } from '../coach/gameReview';
 import { PRESETS, REVIEW_CONFIG } from '../config/review';
 import type { Analysis } from '../engine/uci';
 import type { ChessComGame } from '../review/chesscom';
@@ -262,6 +262,7 @@ export function renderReviewPanel(
   coachLine: HTMLElement,
   resolved: (fen: string) => Analysis | undefined,
   requestAnalysis: (fen: string) => void,
+  learn?: (phases: PhaseStats[]) => HTMLElement | null,
 ): void {
   el.replaceChildren();
   coachLine.hidden = true;
@@ -284,7 +285,7 @@ export function renderReviewPanel(
     if (og) {
       const { before, extras } = gameExtras(m, og);
       og.screen.setModel(m.model(og));
-      renderReviewScreen(body, coachLine, og.screen, resolved, requestAnalysis, { before, extras, momentActions: (i) => momentActions(m, og, i), playFrom: (step, retry) => m.playFrom(step, retry) });
+      renderReviewScreen(body, coachLine, og.screen, resolved, requestAnalysis, { before, extras, momentActions: (i) => momentActions(m, og, i), playFrom: (step, retry) => m.playFrom(step, retry), learn });
     } else body.append(...(m.view === 'patterns' ? patternsView(m) : gamesView(m)));
     el.append(body);
     el.append(

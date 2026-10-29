@@ -4,7 +4,7 @@ import { CLASS_INFO, classSlug, isBad } from '../coach/classes';
 import { mateIn } from '../coach/classify';
 import { lineToSan } from '../coach/facts';
 import { formatEval, formatLine, whiteShare } from '../coach/format';
-import { label as plyLabel } from '../coach/gameReview';
+import { label as plyLabel, type PhaseStats } from '../coach/gameReview';
 import { describeIdea } from '../coach/ruleBased';
 import { CLASS_ORDER } from '../coach/classes';
 import { ESTIMATE_CONFIG, type RatingEstimate } from '../coach/estimate';
@@ -31,6 +31,8 @@ export interface ScreenViewOptions {
   extras?: HTMLElement[];
   /** Shown above the summary (e.g. a back link). */
   before?: HTMLElement[];
+  /** Lessons to suggest from your phase grades (Learn mode), shown under the summary. */
+  learn?: (phases: PhaseStats[]) => HTMLElement | null;
   /** "Play from here" from a review step (plies applied); `retry` = just before one of your blunders. */
   playFrom?: (step: number, retry: boolean) => void;
 }
@@ -423,6 +425,7 @@ export function renderReviewScreen(
   requestAnalysis: (fen: string) => void,
   o: ScreenViewOptions = {},
 ): void {
-  panel.replaceChildren(...(o.before ?? []), summaryCard(s), graph(s), nav(s), ...[practiceRow(s, o)].filter((x): x is HTMLElement => !!x), moveList(s), keyMoments(s, o), linesPanel(s, resolved, requestAnalysis), ...(o.extras ?? []));
+  const learn = s.model.progress ? null : o.learn?.(s.review().phases) ?? null;
+  panel.replaceChildren(...(o.before ?? []), summaryCard(s), ...(learn ? [learn] : []), graph(s), nav(s), ...[practiceRow(s, o)].filter((x): x is HTMLElement => !!x), moveList(s), keyMoments(s, o), linesPanel(s, resolved, requestAnalysis), ...(o.extras ?? []));
   renderCoachLine(coachLine, s);
 }

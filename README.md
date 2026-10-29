@@ -19,6 +19,7 @@ Play Stockfish at a strength from 400 to 2500 Elo, and get a plain-English expla
 - **Hint-free play.** "Show coach and tips during play" can be switched off. Explanations, tips, the eval bar and arrows then appear only after the game ends. The Hint button still works when you ask for it.
 - **Review mode.** Enter a Chess.com username to import your public games, analyze them in the background, and get a review of each game plus patterns across games: accuracy, key moments with explanations, openings and where you left theory, clock use, recurring weaknesses with the numbers behind them. See [Review mode](#review-mode-chesscom-games).
 - **Best move calculator.** The **Best move** tab shows the engine's best move for any position, with its evaluation, the expected line, a one-line idea and two alternatives. Set the position up by hand, paste a FEN or PGN, or load the game from the Play tab. See [Best move](#best-move).
+- **Learn mode.** Lessons in three sections (Openings, Middlegame, Endgames) with progress tracking. Lessons explain a position, ask you to find a move, or have you play it out against the coach. Endgames are checked against the Lichess tablebase. See [Learn](#learn).
 - **Puzzle mode.** Switch between **Play** and **Puzzles** at the top. Puzzles come from the Lichess puzzle database and are served near your own puzzle rating (separate from the game strength setting), or from a band and theme you pick. Wrong moves are explained by the coach, with an arrow to the right move, and you can retry or see the solution. Failed puzzles come back in **Review mistakes**. See [Puzzles](#puzzles).
 - **Takebacks and branching.** Unlimited takebacks, with a counter. Click any move to review it, then either play a different move or press **Continue from here** on any earlier position to branch (you're asked to confirm first).
 - **Piece counter.** Bars above and below the board show each player's captured pieces and the material lead (e.g. +3).
@@ -123,6 +124,79 @@ Both reviews (Review mode's Chess.com games and the review of a game against the
   - From Review mode, the Chess.com game reopens at that step with the review's state as you left it. The practice game stays in Play.
   - If you leave mid-game, it asks first.
 - **At the end:** the card shows the result and whether you met the goal, and a graph of your winning chances in this game against the original game from the same position. It offers **Review this game** (the normal review), **Try again** (same position, side and goal) and **Back to review**. The usual "review this game?" popup is skipped for practice games.
+
+## Learn
+
+The **Learn** tab has three sections: Openings, Middlegame and Endgames. Each lists its lessons with a completion mark and a progress bar. Every lesson is open (nothing is locked).
+
+- **A lesson is a list of steps:**
+  - **Explain:** a position with text, arrows and highlighted squares.
+  - **Try:** you make one move. Any move as good as the best one is accepted, not just one answer. With 7 pieces or fewer the Lichess tablebase decides (the result mustn't get worse). Otherwise the engine does, within a win% margin (default 3 points, `LEARN_CONFIG.tryMargin`). A wrong move gets the coach's explanation, and the right move is shown. **Retry** and **Hint** (first a hint, then the move) are there too.
+  - **Practice:** play the position out against the coach. Goal: mate, or hold a draw for a number of moves.
+- **Controls:** progress dots, **Back** and **Next**, ← and → keys, and **H** for a hint.
+- **Saved progress:** in `localStorage`: each step's result, completed lessons and the last lesson opened.
+- **Review → Learn:** when a review's phase grade is Inaccurate or Poor, based on at least 4 counted moves, the summary card suggests up to 3 lessons for the weakest phase. It says which grade triggered the suggestion, for example "Your endgame was graded Poor (about 8.1 points of winning chance lost per move over 10 counted moves)".
+
+### Endgames and the tablebase
+
+There are nine endgame lessons:
+1. King and pawn: the opposition
+2. King and pawn: key squares
+3. Queen against king
+4. Rook against king
+5. Rook pawns and the wrong bishop
+6. Bishop and knight against king
+7. The Lucena position
+8. The Philidor defence
+9. Rook endgame principles
+
+All the text is original.
+
+Positions with 7 pieces or fewer use the [Lichess tablebase](https://tablebase.lichess.ovh) (`GET /standard?fen=…`, free to use, sends CORS headers). It returns the exact result for the side to move and for every legal move. `src/learn/tablebase.ts` handles it:
+- **One request at a time,** as Lichess asks. After a `429`, it makes no requests for a full minute.
+- **Answers are cached** in IndexedDB.
+- **The opponent in Practice** plays the fastest win when winning, holds when drawn, and picks the loss that lasts longest when losing.
+- **Your moves** get feedback from the tablebase ("still winning, mate in 15") plus the coach's one-line idea. A move that changes the result (win → draw, draw → loss) is flagged at once with the coach's reason, and you can take it back or play on.
+- **If the tablebase can't be reached,** the coach engine takes over, and the panel says the results are engine-based, not tablebase-exact.
+
+### Lesson format
+
+Lessons are data, not UI code: each is a TS module in `src/learn/lessons/<section>/` whose default export is a `Lesson` (`src/learn/types.ts`). `src/learn/registry.ts` picks up every file automatically.
+
+```ts
+export default {
+  id: 'kp-opposition',          // unique and stable: progress is stored under it
+  section: 'endgames',          // 'openings' | 'middlegame' | 'endgames'
+  order: 1,                     // position in the section
+  title: 'King and pawn: the opposition',
+  summary: 'One line for the list.',
+  puzzleThemes: ['endgame'],    // optional: adds "Practice this theme in Puzzles"
+  steps: [
+    { type: 'explain', fen, text, arrows?: [{ from, to, color? }], squares?: [{ sq, color? }], claim?: { side: 'w', result: 'win' } },
+    { type: 'try', fen, prompt, hint, solution: 'e7d7', success, margin?, fastest?, claim? },
+    { type: 'practice', fen, prompt, userColor: 'w', goal: 'win' | 'draw', maxMoves? },
+  ],
+} satisfies Lesson;
+```
+
+- `solution` is the move shown after the hint or a wrong move. Other moves that are just as good are accepted too.
+- `fastest: true` accepts only the quickest win, for example a mate in one.
+- `claim` says what the position is ("a win for White", "a draw").
+
+**To add a lesson:** create the file, then run `npm run verify:lessons`.
+
+### How lessons are verified
+
+`npm run verify:lessons` (`scripts/verify-lessons.mjs`) runs in the deploy workflow, so a wrong lesson can't be deployed. It needs network access for the tablebase; answers are cached in `data/`. It checks:
+- **The schema** (`src/learn/validate.ts`, also run in the unit tests): unique ids, legal FENs, playable Try and Practice positions, legal solutions, valid squares.
+- **Try steps:**
+  - With 7 pieces or fewer, the tablebase must say the solution keeps the best result (and is the quickest when `fastest`).
+  - Otherwise Stockfish (full NNUE, run in Node, depth 20) must rate it within the step's win% margin.
+- **Claims and Practice goals:** they must hold, by the tablebase or the engine (a "win" needs 90%+, a "draw" needs the eval within 0.6 pawns).
+
+It exits with a list of problems if anything fails. I tested it with a deliberately broken lesson, and it caught a false claim, a losing solution, a slow "fastest" solution and an impossible goal.
+
+The script imports the app's TypeScript with Node's built-in type stripping (Node 24 in CI); `scripts/ts-resolve.mjs` adds the `.ts` extensions Vite lets the source leave out.
 
 ## Starting a game from any position
 
@@ -350,6 +424,10 @@ src/
   analysis/            Best move tab controller
   game/position.ts     FEN/PGN parsing, board setup checks, playable-position check
   game/practice.ts     Play from here: goals, judging, the way back to the review
+  learn/               Learn mode: lesson types, validation, registry, progress, tablebase client,
+                       suggestions, controller; lessons/<section>/*.ts are the lesson data
+  ui/learnPanel.ts     the Learn panel
+  config/learn.ts      Learn tuning (Try margin, engine depth, hold length, suggestions)
   ui/practiceDialog.ts, ui/practiceCard.ts   its dialog and Play-panel card
   config/analysis.ts   Best move depths and line count
   ui/analysisPanel.ts  the Best move side panel
@@ -376,6 +454,8 @@ scripts/copy-engine.mjs      copies Stockfish into public/engine (postinstall)
 scripts/generate-themes.mjs  regenerates the custom board and piece SVGs
 scripts/build-puzzles.mjs    builds public/puzzles/ from the Lichess puzzle database
 scripts/build-openings.mjs   builds public/openings.json from the Lichess chess-openings dataset
+scripts/verify-lessons.mjs   checks every lesson with Stockfish and the Lichess tablebase
+scripts/build-rating-calibration.mjs  fits the estimated-rating tables on Lichess games
 ```
 
 ## Libraries
@@ -391,6 +471,7 @@ scripts/build-openings.mjs   builds public/openings.json from the Lichess chess-
 - Puzzles: the [Lichess puzzle database](https://database.lichess.org/#puzzles) (CC0).
 - Opening names: the [Lichess chess-openings](https://github.com/lichess-org/chess-openings) dataset (CC0).
 - Rating calibration: the [Lichess open database](https://database.lichess.org/) (CC0), games with engine evaluations.
+- Endgame results: the [Lichess tablebase](https://tablebase.lichess.ovh) API (free, no key; one request at a time). When it's unreachable, the app says so and uses Stockfish instead.
 
 ## License
 

@@ -42,6 +42,13 @@ import { renderReviewPanel } from './ui/reviewPanel';
 import { renderPuzzlePanel } from './ui/puzzlePanel';
 import { BestMoveMode } from './analysis/controller';
 import { renderAnalysisPanel } from './ui/analysisPanel';
+import { LearnMode } from './learn/controller';
+import { suggestLessons } from './learn/suggest';
+import { TablebaseClient } from './learn/tablebase';
+import { renderLearnPanel } from './ui/learnPanel';
+import { openTablebaseStore } from './review/cache';
+import type { PhaseStats } from './coach/gameReview';
+import { h } from './ui/panel';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -83,6 +90,9 @@ class App {
   puzzles: PuzzleMode;
   reviewMode: ReviewMode;
   bestMove: BestMoveMode;
+  learn: LearnMode;
+  /** Learn mode's engine results, by depth and FEN. */
+  private learnAnalyses = new Map<string, Promise<Analysis>>();
 
   analyses = new Map<string, Promise<Analysis>>();
   resolved = new Map<string, Analysis>();
@@ -139,12 +149,30 @@ class App {
       },
     });
 
+    this.learn = new LearnMode({
+      analyze: (fen, depth) => {
+        const key = `${depth}|${fen}`;
+        let p = this.learnAnalyses.get(key);
+        if (!p) {
+          p = this.coachEngine.analyze(fen, { depth, multiPv: COACH_CONFIG.multiPv, owner: 'learn' });
+          this.learnAnalyses.set(key, p);
+          p.catch(() => this.learnAnalyses.delete(key));
+        }
+        return p;
+      },
+      provider: this.provider,
+      tablebase: new TablebaseClient({ store: openTablebaseStore() }),
+      requestRender: () => this.render(),
+      promotionHost: $('board-host'),
+    });
+
     this.bindUi();
     this.applyAppearance();
     this.render();
     if (this.settings.mode === 'puzzles') this.puzzles.enter();
     else if (this.settings.mode === 'review') this.reviewMode.enter();
     else if (this.settings.mode === 'analysis') this.bestMove.enter();
+    else if (this.settings.mode === 'learn') this.learn.enter();
     else if (!saved) this.openNewGameDialog(true);
     if (saved) this.resume();
     if (saved?.plies.length) void this.tagBookMoves();
@@ -274,6 +302,7 @@ class App {
     if (this.settings.mode === 'puzzles') return this.puzzles.onMove(from, to);
     if (this.settings.mode === 'review') return this.reviewMode.onBoardMove(from, to, $('board-host'));
     if (this.settings.mode === 'analysis') return this.bestMove.onBoardMove(from, to);
+    if (this.settings.mode === 'learn') return this.learn.onBoardMove(from, to);
     if (this.screen) {
       const color = this.screen.currentFen().split(' ')[1] as Color;
       const promo = isPromotionMove(this.screen.currentFen(), from, to) ? await pickPromotion($('board-host'), color) : undefined;
@@ -601,6 +630,7 @@ class App {
     if (mode === 'review') this.reviewMode.enter();
     if (mode === 'analysis') this.bestMove.enter();
     else this.coachEngine.cancelAll('analysis');
+    if (mode === 'learn') this.learn.enter();
     this.render();
   }
 
@@ -701,7 +731,7 @@ class App {
     const view = this.reviewMode.boardView();
     this.board.render(view);
     renderEvalBar($('evalbar'), view.evalCp, view.orientation, view.showEval);
-    renderReviewPanel($('review-panel'), this.reviewMode, $('coach-line'), (f) => this.resolved.get(f), (f) => void this.analyze(f).catch(() => {}));
+    renderReviewPanel($('review-panel'), this.reviewMode, $('coach-line'), (f) => this.resolved.get(f), (f) => void this.analyze(f).catch(() => {}), (phases) => this.lessonSuggestions(phases));
   }
 
   renderAnalysis(): void {
@@ -711,6 +741,37 @@ class App {
     renderAnalysisPanel($('analysis-panel'), this.bestMove);
     $('coach-line').hidden = true;
     $('continue-here').hidden = true;
+  }
+
+  renderLearn(): void {
+    this.board.render(this.learn.boardView());
+    renderEvalBar($('evalbar'), null, 'w', false);
+    renderLearnPanel($('learn-panel'), this.learn, (theme) => this.openPuzzleTheme(theme));
+    $('coach-line').hidden = true;
+    $('continue-here').hidden = true;
+  }
+
+  /** "Practice this theme": Puzzle mode, rated puzzles of that Lichess theme. */
+  openPuzzleTheme(theme: string): void {
+    this.setMode('puzzles');
+    this.puzzles.setPrefs({ theme, source: 'rated' });
+  }
+
+  /** Under a review's summary: lessons for the weakest phase, and which grade triggered it. */
+  lessonSuggestions(phases: PhaseStats[]): HTMLElement | null {
+    const sg = suggestLessons(phases, this.learn.progress);
+    if (!sg) return null;
+    const name = { opening: 'opening', middlegame: 'middlegame', endgame: 'endgame' }[sg.phase];
+    return h('div', { class: 'rs-learn' },
+      h('p', { class: 'small' }, h('strong', {}, 'Suggested lessons. '),
+        `Your ${name} was graded ${sg.grade} (about ${sg.avgDrop.toFixed(1)} points of winning chance lost per move over ${sg.counted} counted moves).`),
+      h('div', { class: 'controls' }, ...sg.lessons.map((l) =>
+        h('button', { type: 'button', class: 'btn small', onclick: () => this.openLesson(l.id) }, l.title))));
+  }
+
+  openLesson(id: string): void {
+    this.setMode('learn');
+    this.learn.open(id);
   }
 
   /** Puzzle mode draws the shared board, the eval bar (analysis only) and its own panel. */
@@ -726,14 +787,17 @@ class App {
     const mode = this.settings.mode;
     document.body.classList.toggle('mode-puzzles', mode !== 'play');
     document.body.classList.toggle('mode-analysis', mode === 'analysis');
+    document.body.classList.toggle('mode-learn', mode === 'learn');
     $('play-panel').hidden = mode !== 'play';
     $('puzzle-panel').hidden = mode !== 'puzzles';
     $('review-panel').hidden = mode !== 'review';
     $('analysis-panel').hidden = mode !== 'analysis';
-    for (const m of ['play', 'puzzles', 'review', 'analysis']) $(`mode-${m}`).setAttribute('aria-selected', String(mode === m));
+    $('learn-panel').hidden = mode !== 'learn';
+    for (const m of ['play', 'puzzles', 'review', 'analysis', 'learn']) $(`mode-${m}`).setAttribute('aria-selected', String(mode === m));
     if (mode === 'puzzles') return this.renderPuzzles();
     if (mode === 'review') return this.renderReview();
     if (mode === 'analysis') return this.renderAnalysis();
+    if (mode === 'learn') return this.renderLearn();
 
     const s = this.session;
     const over = s.result();
@@ -871,6 +935,7 @@ class App {
     if (screen) {
       renderReviewScreen(reviewEl, coachLine, screen, (f) => this.resolved.get(f), (f) => void this.analyze(f).catch(() => {}), {
         before: [h2('Game review'), closeButton(() => this.closeScreen())],
+        learn: (phases) => this.lessonSuggestions(phases),
         playFrom: (step, retry) => {
           const at = screen.positionAt(step);
           void this.startPractice({ ...at, label: `your game against the coach, ${positionLabel(at.fen)}`, retry, back: { source: 'play', step: screen.step } });
@@ -944,6 +1009,7 @@ class App {
     $('mode-puzzles').addEventListener('click', () => this.setMode('puzzles'));
     $('mode-review').addEventListener('click', () => this.setMode('review'));
     $('mode-analysis').addEventListener('click', () => this.setMode('analysis'));
+    $('mode-learn').addEventListener('click', () => this.setMode('learn'));
     $('btn-hint').addEventListener('click', () => this.requestHint());
     const build = $<HTMLSelectElement>('engine-build');
     build.value = this.settings.engine;
@@ -1006,6 +1072,16 @@ class App {
       if (document.querySelector('dialog[open]') || (e.target as HTMLElement).closest('input, textarea, select')) return;
       if (this.settings.mode === 'puzzles') {
         if (e.key === 'h' && !e.metaKey && !e.ctrlKey && !e.altKey) this.puzzles.hint();
+        return;
+      }
+      if (this.settings.mode === 'learn') {
+        const lm = this.learn;
+        if (lm.view !== 'lesson') return;
+        const keys: Record<string, () => void> = { ArrowLeft: () => lm.prev(), ArrowRight: () => lm.next(), h: () => lm.hint() };
+        if (keys[e.key] && !e.metaKey && !e.ctrlKey && !e.altKey) {
+          e.preventDefault();
+          keys[e.key]();
+        }
         return;
       }
       if (this.settings.mode === 'analysis') {

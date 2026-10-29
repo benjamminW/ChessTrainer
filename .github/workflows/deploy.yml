@@ -21,11 +21,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # 24 for built-in TypeScript stripping and module.registerHooks (scripts/verify-lessons.mjs)
+          node-version: 24
           cache: npm
       # postinstall copies the Stockfish .js/.wasm into public/engine/
       - run: npm ci
       - run: npm test
+      # Every lesson position and accepted move, checked with Stockfish and the Lichess tablebase
+      - run: npm run verify:lessons
       - run: npm run build
       - uses: actions/upload-pages-artifact@v3
         with:

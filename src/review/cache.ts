@@ -8,7 +8,7 @@ import type { ChessComGame } from './chesscom';
 import type { GameAnalysis } from './types';
 
 const DB = 'chess-coach-review';
-const VERSION = 1;
+const VERSION = 2;
 
 export interface KeyValueStore<T> {
   get(key: string): Promise<T | undefined>;
@@ -25,7 +25,8 @@ function openDb(): Promise<IDBDatabase> {
     const req = indexedDB.open(DB, VERSION);
     req.onupgradeneeded = () => {
       const db = req.result;
-      for (const name of ['analyses', 'archives']) if (!db.objectStoreNames.contains(name)) db.createObjectStore(name);
+      // Version 2 added 'tablebase' (Learn mode's cached Lichess tablebase answers).
+      for (const name of ['analyses', 'archives', 'tablebase']) if (!db.objectStoreNames.contains(name)) db.createObjectStore(name);
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -62,6 +63,11 @@ export function memoryStore<T>(): KeyValueStore<T> {
     keys: async () => [...m.keys()],
     clear: async () => m.clear(),
   };
+}
+
+/** IndexedDB store of Lichess tablebase answers (memory when IndexedDB is missing). */
+export function openTablebaseStore<T>(): KeyValueStore<T> {
+  return typeof indexedDB === 'undefined' ? memoryStore<T>() : idbStore<T>('tablebase');
 }
 
 export interface ReviewStores {

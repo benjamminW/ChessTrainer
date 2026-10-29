@@ -12,7 +12,7 @@ export interface Settings {
   /** Open the game review automatically when a game ends. */
   autoReview: boolean;
   /** Which mode the app is in. */
-  mode: 'play' | 'puzzles' | 'review' | 'analysis';
+  mode: 'play' | 'puzzles' | 'review' | 'analysis' | 'learn';
   /** An id from BOARDS in src/themes/catalog.ts. */
   boardTheme: string;
   /** An id from PIECE_SETS in src/themes/catalog.ts. */
