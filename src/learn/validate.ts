@@ -30,6 +30,15 @@ function stepProblems(s: LessonStep): string[] {
   if (!fenOk.ok) return [`invalid FEN (${fenOk.error})`];
   if (s.type === 'explain') {
     if (!s.text?.trim()) out.push('missing text');
+    if (s.line) {
+      const c = new Chess();
+      try {
+        for (const u of s.line.split(' ')) c.move(u);
+        if (c.fen().split(' ').slice(0, 4).join(' ') !== s.fen.split(' ').slice(0, 4).join(' ')) out.push(`line "${s.line}" doesn't reach the FEN (it reaches ${c.fen()})`);
+      } catch {
+        out.push(`line "${s.line}" has an illegal move`);
+      }
+    }
     for (const a of s.arrows ?? []) {
       if (!SQUARE.test(a.from) || !SQUARE.test(a.to)) out.push(`bad arrow ${a.from}-${a.to}`);
       if (a.color && !COLORS.includes(a.color)) out.push(`bad arrow color ${a.color}`);
@@ -50,6 +59,21 @@ function stepProblems(s: LessonStep): string[] {
     if (!s.prompt?.trim()) out.push('missing prompt');
     if (s.userColor !== 'w' && s.userColor !== 'b') out.push('userColor must be w or b');
     if (s.goal !== 'win' && s.goal !== 'draw') out.push('goal must be win or draw');
+  } else if (s.type === 'drill') {
+    if (!s.prompt?.trim()) out.push('missing prompt');
+    if (s.side !== 'w' && s.side !== 'b') out.push('side must be w or b');
+    if (!s.lines?.length) out.push('no lines');
+    for (const line of s.lines ?? []) {
+      const c = new Chess();
+      try {
+        for (const u of line.split(' ')) c.move(u);
+      } catch {
+        out.push(`line "${line}" has an illegal move`);
+      }
+    }
+    for (const key of Object.keys(s.notes ?? {})) {
+      if (!(s.lines ?? []).some((l) => (l + ' ').startsWith(key + ' '))) out.push(`note "${key}" isn't on any line`);
+    }
   } else {
     out.push(`unknown step type "${(s as { type: string }).type}"`);
   }

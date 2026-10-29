@@ -239,3 +239,115 @@ describe('progress and suggestions', () => {
     expect(suggestLessons([phase({ phase: 'middlegame' })], fresh(), LESSONS.filter((l) => l.section === 'endgames'))).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------- opening drills
+
+import openingRows from '../public/openings.json';
+import { lessonForOpening } from '../src/learn/suggest';
+import type { DrillStep } from '../src/learn/types';
+
+describe('opening lessons', () => {
+  const openings = LESSONS.filter((l) => l.section === 'openings');
+  const rows = new Set((openingRows as [string, string, string][]).map((r) => r[2]));
+
+  it('has 8 openings for both colors, each with 2 to 4 drill lines from the dataset', () => {
+    expect(openings).toHaveLength(8);
+    const sides = new Set<string>();
+    for (const l of openings) {
+      const d = l.steps.find((s) => s.type === 'drill') as DrillStep;
+      expect(d, l.id).toBeTruthy();
+      sides.add(d.side);
+      expect(d.lines.length).toBeGreaterThanOrEqual(2);
+      expect(d.lines.length).toBeLessThanOrEqual(4);
+      for (const line of d.lines) expect(rows.has(line), `${l.id}: ${line}`).toBe(true);
+      expect(l.steps.filter((s) => s.type === 'explain').length).toBeGreaterThanOrEqual(3);
+    }
+    expect(sides).toEqual(new Set(['w', 'b']));
+  });
+
+  it("finds the lesson for a review's opening name", () => {
+    expect(lessonForOpening('Italian Game: Giuoco Piano')?.id).toBe('italian');
+    expect(lessonForOpening("Queen's Gambit Declined: Exchange Variation")?.id).toBe('queens-gambit');
+    expect(lessonForOpening("Queen's Pawn Game: London System")?.id).toBe('london');
+    expect(lessonForOpening('Sicilian Defense: Najdorf Variation')?.id).toBe('sicilian');
+    expect(lessonForOpening('Ruy Lopez')).toBeNull();
+    expect(lessonForOpening('Italian Gamebit')).toBeNull();
+  });
+});
+
+describe('opening drill', () => {
+  const drillLesson: Lesson = {
+    id: 'test-drill', section: 'openings', order: 1, title: 'T', summary: 'S',
+    steps: [{
+      type: 'drill', fen: new Chess().fen(), prompt: 'p', side: 'w',
+      lines: ['e2e4 e7e5 g1f3 b8c6 f1c4 f8c5 d2d3', 'e2e4 e7e5 g1f3 b8c6 f1c4 g8f6 b1c3'],
+      notes: { 'e2e4 e7e5 g1f3': 'Nf3 attacks e5.' },
+    }],
+  };
+  const drillMode = (random = () => 0) => {
+    const m = learn();
+    (m as unknown as { deps: LearnDeps }).deps.random = random;
+    (m as unknown as { deps: LearnDeps }).deps.replyDelayMs = 0;
+    m.lesson = drillLesson;
+    m.view = 'lesson';
+    m.goToStep(0);
+    return m;
+  };
+  const tick = () => new Promise((r) => setTimeout(r, 5));
+
+  it('replies from the line, spots a move that leaves book, shows the book move and its idea, and lets you retry', async () => {
+    const m = drillMode();
+    const d = m.drill!;
+    await m.onBoardMove('e2', 'e4');
+    await tick();
+    expect(d.chess.history()).toEqual(['e4', 'e5']);
+    await m.onBoardMove('d2', 'd4'); // not in the lesson's lines
+    expect(d.phase).toBe('offbook');
+    expect(d.offbook).toMatchObject({ san: 'd4', book: [{ uci: 'g1f3', san: 'Nf3' }], idea: 'Nf3 attacks e5.' });
+    expect(d.chess.history()).toEqual(['e4', 'e5']); // the move isn't played
+    expect(m.boardView().shapes).toEqual(expect.arrayContaining([{ from: 'd2', to: 'd4', brush: 'red' }, { from: 'g1', to: 'f3', brush: 'green' }]));
+    m.retry();
+    expect(d.phase).toBe('playing');
+    await m.onBoardMove('g1', 'f3');
+    await tick();
+    expect(d.chess.history()).toEqual(['e4', 'e5', 'Nf3', 'Nc6']);
+    const stats = m.progress.lessons['test-drill'].drill!;
+    expect(stats[d.target].misses).toBe(1);
+  });
+
+  it("uses the coach's own idea when the lesson has no note", async () => {
+    const m = drillMode();
+    await m.onBoardMove('d2', 'd4');
+    expect(m.drill!.offbook?.idea).toBeTruthy();
+    expect(m.drill!.offbook?.idea).not.toBe('Nf3 attacks e5.');
+  });
+
+  it('plays a line to the end and records it', async () => {
+    const m = drillMode(() => 0); // first line: ...Bc5 d3
+    const d = m.drill!;
+    for (const [f, t] of [['e2', 'e4'], ['g1', 'f3'], ['f1', 'c4'], ['d2', 'd3']]) {
+      await m.onBoardMove(f, t);
+      await tick();
+    }
+    expect(d.phase).toBe('done');
+    expect(d.target).toBe('e2e4 e7e5 g1f3 b8c6 f1c4 f8c5 d2d3');
+    expect(m.progress.lessons['test-drill'].drill![d.target].completed).toBe(1);
+    // One of two lines done: the step isn't complete yet.
+    expect(m.progress.lessons['test-drill'].steps[0]?.done).toBe(false);
+  });
+
+  it('picks unfinished lines first, then the ones you miss most', () => {
+    const m = drillMode();
+    const [a, b] = drillLesson.steps[0].type === 'drill' ? drillLesson.steps[0].lines : [];
+    const stats = m.progress.lessons['test-drill'].drill!;
+    stats[a] = { runs: 3, misses: 0, completed: 3 };
+    stats[b] = { runs: 0, misses: 0, completed: 0 };
+    expect(m.pickLine([a, b])).toBe(b);
+    stats[b] = { runs: 4, misses: 5, completed: 1 };
+    // Weights 1 (a) and 11 (b): b takes everything above 1/12.
+    (m as unknown as { deps: LearnDeps }).deps.random = () => 0.5;
+    expect(m.pickLine([a, b])).toBe(b);
+    (m as unknown as { deps: LearnDeps }).deps.random = () => 0.05;
+    expect(m.pickLine([a, b])).toBe(a);
+  });
+});

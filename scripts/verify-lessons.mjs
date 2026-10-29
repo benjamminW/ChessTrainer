@@ -32,6 +32,8 @@ for (const section of readdirSync(dir)) {
   }
 }
 const problems = allProblems(lessons);
+const datasetLines = new Set(JSON.parse(readFileSync(join(root, 'public/openings.json'), 'utf8')).map((r) => r[2]));
+const drillChecked = new Set();
 
 // ------------------------------------------------------------ engine (Stockfish in Node)
 
@@ -69,14 +71,14 @@ async function analyze(fen, depth = LEARN_CONFIG.verifyDepth, multiPv = 4) {
   return [...lines.values()].sort((a, b) => b.cp - a.cp);
 }
 /** Mover-POV score of a move: from the MultiPV lines, or by searching the position after it. */
-async function moveScore(fen, uci, lines) {
+async function moveScore(fen, uci, lines, depth = LEARN_CONFIG.verifyDepth) {
   const own = lines.find((l) => l.uci === uci);
   if (own) return own.cp;
   const c = new Chess(fen);
   c.move(uci);
   if (c.isCheckmate()) return MATE;
   if (c.isDraw()) return 0;
-  const after = await analyze(c.fen(), LEARN_CONFIG.verifyDepth, 1);
+  const after = await analyze(c.fen(), depth, 1);
   return -(after[0]?.cp ?? 0);
 }
 
@@ -153,6 +155,27 @@ for (const l of lessons) {
         }
         void side;
         checked++;
+      }
+      if (s.type === 'drill') {
+        for (const line of s.lines) {
+          if (!datasetLines.has(line)) problems.push(`${at}: line "${line}" isn't a line of the Lichess openings dataset`);
+          // Every book move you're asked to play must be a sound move.
+          const c = new Chess();
+          for (const u of line.split(' ')) {
+            if (c.turn() === s.side) {
+              const key = c.fen() + '|' + u;
+              if (!drillChecked.has(key)) {
+                drillChecked.add(key);
+                const lines = await analyze(c.fen(), LEARN_CONFIG.drillDepth);
+                const solCp = await moveScore(c.fen(), u, lines, LEARN_CONFIG.drillDepth);
+                const drop = Math.max(0, winPercent(lines[0]?.cp ?? 0) - winPercent(solCp));
+                if (drop > LEARN_CONFIG.drillMargin) problems.push(`${at}: book move ${u} after "${c.history().join(' ')}" loses ${drop.toFixed(1)} win% (engine prefers ${lines[0]?.uci})`);
+                checked++;
+              }
+            }
+            c.move(u);
+          }
+        }
       }
       if (s.type === 'practice') {
         const r = await resultFor(s.fen, s.userColor);

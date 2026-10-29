@@ -263,6 +263,7 @@ export function renderReviewPanel(
   resolved: (fen: string) => Analysis | undefined,
   requestAnalysis: (fen: string) => void,
   learn?: (phases: PhaseStats[]) => HTMLElement | null,
+  openingLesson?: (name: string) => HTMLElement | null,
 ): void {
   el.replaceChildren();
   coachLine.hidden = true;
@@ -285,7 +286,7 @@ export function renderReviewPanel(
     if (og) {
       const { before, extras } = gameExtras(m, og);
       og.screen.setModel(m.model(og));
-      renderReviewScreen(body, coachLine, og.screen, resolved, requestAnalysis, { before, extras, momentActions: (i) => momentActions(m, og, i), playFrom: (step, retry) => m.playFrom(step, retry), learn });
+      renderReviewScreen(body, coachLine, og.screen, resolved, requestAnalysis, { before, extras, momentActions: (i) => momentActions(m, og, i), playFrom: (step, retry) => m.playFrom(step, retry), learn, openingLesson });
     } else body.append(...(m.view === 'patterns' ? patternsView(m) : gamesView(m)));
     el.append(body);
     el.append(

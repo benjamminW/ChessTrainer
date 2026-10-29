@@ -13,8 +13,18 @@ export interface StepResult {
   clean?: boolean;
 }
 
+/** Opening drill results per line (keyed by the line's moves). */
+export interface DrillLineStats {
+  runs: number;
+  /** Times you left book on this line. */
+  misses: number;
+  /** Times you played it to the end. */
+  completed: number;
+}
+
 export interface LessonProgress {
   steps: Record<number, StepResult>;
+  drill?: Record<string, DrillLineStats>;
   /** Step to reopen at. */
   lastStep: number;
   completedAt?: string;

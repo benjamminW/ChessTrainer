@@ -17,7 +17,9 @@ import { pickPromotion } from '../ui/promotion';
 import { isComplete, lessonProgress, loadProgress, recordStep, saveProgress, type LearnProgress } from './progress';
 import { LESSONS, lessonById } from './registry';
 import { MAX_PIECES, TablebaseUnavailable, bestTbMove, moverOutcome, outcomeOf, type Outcome, type TablebaseClient, type TbResult } from './tablebase';
-import type { Lesson, LessonStep, PracticeStep, Side, TryStep } from './types';
+import type { DrillStep, Lesson, LessonStep, PracticeStep, Side, TryStep } from './types';
+import type { OpeningLine } from '../review/openings';
+import type { DrillLineStats } from './progress';
 import { pieceCount } from './validate';
 
 export interface LearnDeps {
@@ -28,6 +30,27 @@ export interface LearnDeps {
   promotionHost: HTMLElement;
   /** Opens Puzzle mode on a theme ("Practice this theme"). */
   openPuzzles?(theme: string): void;
+  /** The Lichess chess-openings dataset (names and ECO codes for drill lines). */
+  openingLines?(): Promise<OpeningLine[]>;
+  /** For the drill's choice of line (tests pass a fixed one). */
+  random?(): number;
+  /** Pause before the coach's drill replies, so they don't appear instantly (ms). */
+  replyDelayMs?: number;
+}
+
+export interface DrillState {
+  chess: Chess;
+  /** The line the coach is following (it switches when you choose another book move). */
+  target: string;
+  phase: 'playing' | 'thinking' | 'offbook' | 'done';
+  /** Your move that left book, and the book moves you could have played. */
+  offbook: { uci: string; san: string; book: { uci: string; san: string }[]; idea: string } | null;
+  misses: number;
+  lastMove: [string, string] | null;
+  /** Book moves shown on request (Hint). */
+  hint: string[] | null;
+  /** Dataset name and ECO of a line, once loaded. */
+  names: Map<string, { eco: string; name: string }>;
 }
 
 /** Who judged a move: the tablebase (exact) or the engine (an estimate). */
@@ -79,6 +102,7 @@ export class LearnMode {
   index = 0;
   tryState: TryState | null = null;
   practice: PracticeState | null = null;
+  drill: DrillState | null = null;
   /** Bumped on every step change so late async results are dropped. */
   private token = 0;
 
@@ -114,6 +138,7 @@ export class LearnMode {
     this.lesson = null;
     this.tryState = null;
     this.practice = null;
+    this.drill = null;
     this.deps.requestRender();
   }
 
@@ -126,8 +151,10 @@ export class LearnMode {
     const s = l.steps[this.index];
     this.tryState = s.type === 'try' ? { phase: 'waiting', hint: 0, played: null, feedback: null, attempts: 0 } : null;
     this.practice = null;
+    this.drill = null;
     if (s.type === 'explain') recordStep(this.progress, l, this.index, { done: true });
     if (s.type === 'practice') this.startPractice(s);
+    if (s.type === 'drill') this.startDrill(s);
     saveProgress(this.progress);
     this.deps.requestRender();
   }
@@ -199,13 +226,14 @@ export class LearnMode {
   async onBoardMove(from: string, to: string): Promise<void> {
     const s = this.step;
     if (!s || s.type === 'explain') return this.deps.requestRender();
-    const chess = s.type === 'try' ? new Chess(s.fen) : this.practice?.chess;
+    const chess = s.type === 'try' ? new Chess(s.fen) : s.type === 'drill' ? this.drill?.chess : this.practice?.chess;
     if (!chess) return;
     const isPromo = chess.moves({ verbose: true }).some((m) => m.from === from && m.to === to && m.promotion);
     const promo = isPromo ? await pickPromotion(this.deps.promotionHost, chess.turn()) : undefined;
     if (promo === null) return this.deps.requestRender();
     const uci = from + to + (promo ?? '');
     if (s.type === 'try') return this.tryMove(s, uci);
+    if (s.type === 'drill') return this.drillMove(s, uci);
     return this.practiceMove(uci);
   }
 
@@ -272,6 +300,13 @@ export class LearnMode {
       return this.deps.requestRender();
     }
     if (this.practice) void this.practiceHint();
+    const d = this.drill;
+    const s = this.step;
+    if (d && s?.type === 'drill' && d.phase === 'playing') {
+      const played = d.chess.history({ verbose: true }).map((m) => m.from + m.to + (m.promotion ?? ''));
+      d.hint = [...new Set(this.drillCandidates(s, played).filter((l) => l.length > played.length).map((l) => l[played.length]))];
+      this.deps.requestRender();
+    }
   }
 
   retry(): void {
@@ -285,7 +320,142 @@ export class LearnMode {
       this.token++;
       this.startPractice(s);
       this.deps.requestRender();
+    } else if (s?.type === 'drill') {
+      const d = this.drill;
+      if (d?.phase === 'offbook') {
+        // Back to the position before your move: try again from there.
+        d.offbook = null;
+        d.phase = 'playing';
+        this.deps.requestRender();
+      } else {
+        this.token++;
+        this.startDrill(s);
+        this.deps.requestRender();
+      }
     }
+  }
+
+  // ------------------------------------------------------------ Drill
+
+  private drillStats(line: string): DrillLineStats {
+    const lp = lessonProgress(this.progress, this.lesson!.id);
+    lp.drill ??= {};
+    return (lp.drill[line] ??= { runs: 0, misses: 0, completed: 0 });
+  }
+
+  /**
+   * Picks the line for a run: lines you've never finished come first; after that, lines are
+   * weighted by how often you've left book on them, so the ones you miss most come back.
+   */
+  pickLine(lines: string[]): string {
+    const stats = lines.map((l) => this.drillStats(l));
+    const fresh = lines.filter((_, i) => stats[i].completed === 0);
+    const pool = fresh.length ? fresh : lines;
+    const weights = pool.map((l) => (fresh.length ? 1 : 1 + 2 * this.drillStats(l).misses));
+    let r = (this.deps.random ?? Math.random)() * weights.reduce((a, b) => a + b, 0);
+    for (let i = 0; i < pool.length; i++) if ((r -= weights[i]) < 0) return pool[i];
+    return pool[pool.length - 1];
+  }
+
+  private startDrill(s: DrillStep): void {
+    const target = this.pickLine(s.lines);
+    this.drillStats(target).runs++;
+    saveProgress(this.progress);
+    this.drill = { chess: new Chess(), target, phase: 'playing', offbook: null, misses: 0, lastMove: null, hint: null, names: new Map() };
+    const d = this.drill;
+    void this.deps.openingLines?.().then((rows) => {
+      for (const [eco, name, ucis] of rows) if (s.lines.includes(ucis)) d.names.set(ucis, { eco, name });
+      this.deps.requestRender();
+    }, () => {});
+    if (s.side !== 'w') void this.drillReply(s);
+  }
+
+  /** Lines that agree with the moves played so far. */
+  private drillCandidates(s: DrillStep, played: string[]): string[][] {
+    return s.lines.map((l) => l.split(' ')).filter((l) => played.every((u, i) => l[i] === u));
+  }
+
+  private async drillMove(s: DrillStep, uci: string): Promise<void> {
+    const d = this.drill;
+    if (!d || d.phase !== 'playing' || d.chess.turn() !== s.side) return this.deps.requestRender();
+    const played = d.chess.history({ verbose: true }).map((m) => m.from + m.to + (m.promotion ?? ''));
+    const n = played.length;
+    const cands = this.drillCandidates(s, played).filter((l) => l.length > n);
+    const bookUci = [...new Set(cands.map((l) => l[n]))];
+    if (!bookUci.includes(uci)) {
+      // Left book: show the book move(s) and the idea, then let you retry.
+      const fen = d.chess.fen();
+      const probe = new Chess(fen);
+      let san = uci;
+      try {
+        san = probe.move(uci).san;
+      } catch {
+        return this.deps.requestRender();
+      }
+      const book = bookUci.map((u) => ({ uci: u, san: new Chess(fen).move(u).san }));
+      const first = book.find((b) => d.target.split(' ')[n] === b.uci) ?? book[0];
+      const key = [...played, first.uci].join(' ');
+      const idea = s.notes?.[key] ?? (describeIdea(fen, first.uci, s.side) || `${first.san} is the book move here.`);
+      d.offbook = { uci, san, book, idea };
+      d.phase = 'offbook';
+      d.misses++;
+      this.drillStats(d.target).misses++;
+      recordStep(this.progress, this.lesson!, this.index, { done: false });
+      saveProgress(this.progress);
+      return this.deps.requestRender();
+    }
+    const m = d.chess.move(uci);
+    d.lastMove = [m.from, m.to];
+    d.hint = null;
+    // Your move picked another listed line: the coach follows that one now.
+    if (d.target.split(' ')[n] !== uci) {
+      const next = cands.filter((l) => l[n] === uci).map((l) => l.join(' '));
+      d.target = this.pickLine(next);
+    }
+    if (this.drillFinished(s)) return;
+    await this.drillReply(s);
+  }
+
+  private async drillReply(s: DrillStep): Promise<void> {
+    const d = this.drill;
+    if (!d) return;
+    const t = this.token;
+    d.phase = 'thinking';
+    this.deps.requestRender();
+    await new Promise((r) => setTimeout(r, this.deps.replyDelayMs ?? 350));
+    if (t !== this.token || this.drill !== d) return;
+    const played = d.chess.history({ verbose: true }).map((m) => m.from + m.to + (m.promotion ?? ''));
+    const n = played.length;
+    // The coach follows its line; if that line ended, any listed line that continues.
+    let line = d.target.split(' ');
+    if (line.length <= n) {
+      const more = this.drillCandidates(s, played).filter((l) => l.length > n).map((l) => l.join(' '));
+      if (!more.length) return void this.drillFinished(s, true);
+      d.target = this.pickLine(more);
+      line = d.target.split(' ');
+    }
+    const m = d.chess.move(line[n]);
+    d.lastMove = [m.from, m.to];
+    d.phase = 'playing';
+    if (!this.drillFinished(s)) this.deps.requestRender();
+  }
+
+  /** True (and records the run) when no listed line continues from here. */
+  private drillFinished(s: DrillStep, force = false): boolean {
+    const d = this.drill!;
+    const played = d.chess.history({ verbose: true }).map((m) => m.from + m.to + (m.promotion ?? ''));
+    const more = this.drillCandidates(s, played).some((l) => l.length > played.length);
+    if (more && !force) return false;
+    d.phase = 'done';
+    const line = s.lines.find((l) => l === played.join(' ')) ?? d.target;
+    d.target = line;
+    this.drillStats(line).completed++;
+    const lp = lessonProgress(this.progress, this.lesson!.id);
+    const all = s.lines.every((l) => (lp.drill?.[l]?.completed ?? 0) > 0);
+    recordStep(this.progress, this.lesson!, this.index, { done: all });
+    saveProgress(this.progress);
+    this.deps.requestRender();
+    return true;
   }
 
   // ------------------------------------------------------------ Practice
@@ -488,6 +658,22 @@ export class LearnMode {
         lastMove: st.phase === 'correct' && st.played ? [st.played.uci.slice(0, 2), st.played.uci.slice(2, 4)] : null,
         check: live.inCheck(),
         shapes,
+      };
+    }
+    if (s.type === 'drill') {
+      const d = this.drill!;
+      const c = d.chess;
+      const mine = d.phase === 'playing' && c.turn() === s.side;
+      const shapes: BoardView['shapes'] = [];
+      if (d.offbook) {
+        shapes.push(arrow(d.offbook.uci, 'red'));
+        for (const b of d.offbook.book) shapes.push(arrow(b.uci, 'green'));
+      }
+      for (const u of d.hint ?? []) shapes.push(arrow(u, 'blue'));
+      return {
+        fen: c.fen(), orientation: s.side, turn: c.turn(),
+        movable: mine ? s.side : null, dests: mine ? destsOf(c) : new Map(),
+        lastMove: d.lastMove, check: c.inCheck(), shapes,
       };
     }
     const p = this.practice!;

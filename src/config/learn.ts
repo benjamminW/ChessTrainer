@@ -13,6 +13,10 @@ export const LEARN_CONFIG = {
   /** Verify script: engine depth, and the win% a "win" claim needs when the tablebase can't be used. */
   verifyDepth: 20,
   verifyWinPct: 90,
+  /** Verify script: the book moves you play in a drill may lose at most this many win% points (openings allow gambits and theory). */
+  drillMargin: 8,
+  /** Verify script: engine depth for drill moves (there are many). */
+  drillDepth: 16,
   /** Verify script: a "draw" claim needs the engine eval within this many centipawns of 0 (more than 7 pieces). */
   verifyDrawCp: 60,
 };

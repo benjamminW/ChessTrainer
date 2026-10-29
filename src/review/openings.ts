@@ -82,16 +82,22 @@ export function bookPrefix(book: OpeningBook, moves: { uci: string; fenBefore: s
   return n;
 }
 
+let linesPromise: Promise<OpeningLine[]> | null = null;
 let bookPromise: Promise<OpeningBook> | null = null;
+
+/** The raw dataset rows, loaded once (Learn's opening drills use the names and ECO codes). */
+export function loadOpeningLines(baseUrl: string): Promise<OpeningLine[]> {
+  linesPromise ??= fetch(`${baseUrl}openings.json`).then((r) => {
+    if (!r.ok) throw new Error(`could not load openings (HTTP ${r.status})`);
+    return r.json() as Promise<OpeningLine[]>;
+  });
+  linesPromise.catch(() => (linesPromise = null));
+  return linesPromise;
+}
 
 /** Loads and indexes the dataset once (only when Review mode needs it). */
 export function loadBook(baseUrl: string): Promise<OpeningBook> {
-  bookPromise ??= fetch(`${baseUrl}openings.json`)
-    .then((r) => {
-      if (!r.ok) throw new Error(`could not load openings (HTTP ${r.status})`);
-      return r.json() as Promise<OpeningLine[]>;
-    })
-    .then(buildBook);
+  bookPromise ??= loadOpeningLines(baseUrl).then(buildBook);
   bookPromise.catch(() => (bookPromise = null));
   return bookPromise;
 }

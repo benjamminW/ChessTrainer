@@ -129,13 +129,27 @@ Both reviews (Review mode's Chess.com games and the review of a game against the
 
 The **Learn** tab has three sections: Openings, Middlegame and Endgames. Each lists its lessons with a completion mark and a progress bar. Every lesson is open (nothing is locked).
 
-- **A lesson is a list of steps:**
+- **A lesson is a list of steps** (openings also have a **Drill**, below):
   - **Explain:** a position with text, arrows and highlighted squares.
   - **Try:** you make one move. Any move as good as the best one is accepted, not just one answer. With 7 pieces or fewer the Lichess tablebase decides (the result mustn't get worse). Otherwise the engine does, within a win% margin (default 3 points, `LEARN_CONFIG.tryMargin`). A wrong move gets the coach's explanation, and the right move is shown. **Retry** and **Hint** (first a hint, then the move) are there too.
   - **Practice:** play the position out against the coach. Goal: mate, or hold a draw for a number of moves.
 - **Controls:** progress dots, **Back** and **Next**, ← and → keys, and **H** for a hint.
 - **Saved progress:** in `localStorage`: each step's result, completed lessons and the last lesson opened.
 - **Review → Learn:** when a review's phase grade is Inaccurate or Poor, based on at least 4 counted moves, the summary card suggests up to 3 lessons for the weakest phase. It says which grade triggered the suggestion, for example "Your endgame was graded Poor (about 8.1 points of winning chance lost per move over 10 counted moves)".
+
+### Openings and the drill
+
+There are eight opening lessons:
+- **As White:** the Italian Game, the Queen's Gambit and the London System.
+- **As Black:** the Sicilian, the French, the Caro-Kann, the King's Indian, and the Scandinavian (a simple answer to 1.e4 for beginners).
+
+Each has 3–4 annotated key positions explaining both sides' plans (original text) and a **Drill**:
+- **How it plays:** you play your side from move 1, and the coach answers with one of the lesson's 2–3 lines.
+- **Leaving book:** if your move isn't on any of the lines, it isn't played. You see the book move or moves (green arrows) and the idea in a sentence or two, then **Retry**. The idea is the lesson's own note when it has one, otherwise the coach's description of the move. **Hint** shows the book move.
+- **Choosing a line:** if you pick another listed line, the coach follows that one.
+- **Resurfacing misses:** each line counts how often you finished it and how often you left book on it. Lines you haven't finished come first; after that, lines are picked in proportion to 1 + 2 × misses, so the ones you miss most come back. The step is done once every line has been played to the end.
+
+Every drill line is an exact line of the [Lichess chess-openings dataset](https://github.com/lichess-org/chess-openings) (CC0, `public/openings.json`), which also gives the name and ECO code shown in the drill. The Lichess opening explorer API isn't used. In a review, the opening name has a **Learn this opening →** link when a lesson covers it.
 
 ### Endgames and the tablebase
 
@@ -175,6 +189,7 @@ export default {
     { type: 'explain', fen, text, arrows?: [{ from, to, color? }], squares?: [{ sq, color? }], claim?: { side: 'w', result: 'win' } },
     { type: 'try', fen, prompt, hint, solution: 'e7d7', success, margin?, fastest?, claim? },
     { type: 'practice', fen, prompt, userColor: 'w', goal: 'win' | 'draw', maxMoves? },
+    { type: 'drill', fen: START, prompt, side: 'w', lines: ['e2e4 e7e5 g1f3 …', …], notes?: { 'e2e4 e7e5 g1f3': 'Nf3 attacks e5…' } },
   ],
 } satisfies Lesson;
 ```
@@ -182,6 +197,8 @@ export default {
 - `solution` is the move shown after the hint or a wrong move. Other moves that are just as good are accepted too.
 - `fastest: true` accepts only the quickest win, for example a mate in one.
 - `claim` says what the position is ("a win for White", "a draw").
+- An Explain step can also give `line` (the moves that reach its FEN); the validator checks that they do.
+- `openings` (a list of dataset name prefixes such as `"Italian Game"`) links the lesson from reviews of games in that opening.
 
 **To add a lesson:** create the file, then run `npm run verify:lessons`.
 
@@ -192,6 +209,7 @@ export default {
 - **Try steps:**
   - With 7 pieces or fewer, the tablebase must say the solution keeps the best result (and is the quickest when `fastest`).
   - Otherwise Stockfish (full NNUE, run in Node, depth 20) must rate it within the step's win% margin.
+- **Drill steps:** every line must be an exact line of the openings dataset. Every book move you're asked to play must lose at most 8 win% against Stockfish's best at depth 16 (`LEARN_CONFIG.drillMargin`), which leaves room for gambits and theory but not for blunders.
 - **Claims and Practice goals:** they must hold, by the tablebase or the engine (a "win" needs 90%+, a "draw" needs the eval within 0.6 pawns).
 
 It exits with a list of problems if anything fails. I tested it with a deliberately broken lesson, and it caught a false claim, a losing solution, a slow "fastest" solution and an impossible goal.

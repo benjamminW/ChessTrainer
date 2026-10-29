@@ -31,3 +31,8 @@ export function suggestLessons(phases: PhaseStats[], progress: LearnProgress, le
   const picked = [...pool.filter((l) => !isComplete(progress, l)), ...pool.filter((l) => isComplete(progress, l))].slice(0, LEARN_CONFIG.suggestMax);
   return { phase: p.phase, grade: p.grade!, counted: p.counted, avgDrop: p.avgDrop!, lessons: picked };
 }
+
+/** The opening lesson covering a dataset opening name (e.g. "Italian Game: Giuoco Piano"), if any. */
+export function lessonForOpening(name: string, lessons: Lesson[] = LESSONS): Lesson | null {
+  return lessons.find((l) => l.openings?.some((family) => name === family || name.startsWith(family + ':') || name.startsWith(family + ','))) ?? null;
+}

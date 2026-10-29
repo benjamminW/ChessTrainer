@@ -31,6 +31,8 @@ export interface ScreenViewOptions {
   extras?: HTMLElement[];
   /** Shown above the summary (e.g. a back link). */
   before?: HTMLElement[];
+  /** A link to the Learn lesson for this opening, if there is one (next to "where you left book"). */
+  openingLesson?: (openingName: string) => HTMLElement | null;
   /** Lessons to suggest from your phase grades (Learn mode), shown under the summary. */
   learn?: (phases: PhaseStats[]) => HTMLElement | null;
   /** "Play from here" from a review step (plies applied); `retry` = just before one of your blunders. */
@@ -39,7 +41,7 @@ export interface ScreenViewOptions {
 
 // ---------------------------------------------------------------- summary
 
-function summaryCard(s: ReviewScreen): HTMLElement {
+function summaryCard(s: ReviewScreen, o: ScreenViewOptions = {}): HTMLElement {
   const r = s.review();
   const meta = s.model.meta;
   const me = s.user;
@@ -88,11 +90,11 @@ function summaryCard(s: ReviewScreen): HTMLElement {
     h('tbody', {}, ...rows)));
 
   // Opening
-  const o = meta.opening;
-  if (o) {
-    const left = o.leftAt === null ? 'The game never left known theory.'
-      : `${o.leftBy === me ? 'You' : 'Your opponent'} left book with ${plyLabel({ ...s.plies[o.leftAt], by: 'user' })}${o.bookMoves.length ? ` (book: ${o.bookMoves.join(', ')})` : ''}.`;
-    body.append(h('p', { class: 'small' }, h('strong', {}, `${o.name}`), ` (${o.eco}). `, left));
+  const op = meta.opening;
+  if (op) {
+    const left = op.leftAt === null ? 'The game never left known theory.'
+      : `${op.leftBy === me ? 'You' : 'Your opponent'} left book with ${plyLabel({ ...s.plies[op.leftAt], by: 'user' })}${op.bookMoves.length ? ` (book: ${op.bookMoves.join(', ')})` : ''}.`;
+    body.append(h('p', { class: 'small' }, h('strong', {}, `${op.name}`), ` (${op.eco}). `, left, ' ', o.openingLesson?.(op.name) ?? null));
   }
 
   // Phase grades
@@ -426,6 +428,6 @@ export function renderReviewScreen(
   o: ScreenViewOptions = {},
 ): void {
   const learn = s.model.progress ? null : o.learn?.(s.review().phases) ?? null;
-  panel.replaceChildren(...(o.before ?? []), summaryCard(s), ...(learn ? [learn] : []), graph(s), nav(s), ...[practiceRow(s, o)].filter((x): x is HTMLElement => !!x), moveList(s), keyMoments(s, o), linesPanel(s, resolved, requestAnalysis), ...(o.extras ?? []));
+  panel.replaceChildren(...(o.before ?? []), summaryCard(s, o), ...(learn ? [learn] : []), graph(s), nav(s), ...[practiceRow(s, o)].filter((x): x is HTMLElement => !!x), moveList(s), keyMoments(s, o), linesPanel(s, resolved, requestAnalysis), ...(o.extras ?? []));
   renderCoachLine(coachLine, s);
 }

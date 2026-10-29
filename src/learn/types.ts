@@ -33,6 +33,8 @@ export interface Claim {
 export interface ExplainStep {
   type: 'explain';
   fen: string;
+  /** Optional: the moves (UCI from the start) that reach `fen`; the validator checks they do. */
+  line?: string;
   text: string;
   arrows?: LessonArrow[];
   squares?: LessonSquare[];
@@ -69,7 +71,26 @@ export interface PracticeStep {
   maxMoves?: number;
 }
 
-export type LessonStep = ExplainStep | TryStep | PracticeStep;
+/**
+ * Opening drill: you play `side` from move 1 and the coach answers from the listed lines.
+ * Each line is a full move sequence (UCI, space-separated) that must be a line of the Lichess
+ * chess-openings dataset, which also supplies its name and ECO code.
+ */
+export interface DrillStep {
+  type: 'drill';
+  /** Always the start position (kept for the board and the schema). */
+  fen: string;
+  prompt: string;
+  side: Side;
+  lines: string[];
+  /**
+   * Optional one- or two-sentence ideas for your book moves, keyed by the moves up to and
+   * including that move (UCI). Without one, the coach's own move description is used.
+   */
+  notes?: Record<string, string>;
+}
+
+export type LessonStep = ExplainStep | TryStep | PracticeStep | DrillStep;
 
 export interface Lesson {
   /** Unique, stable (progress is stored under it). */
@@ -80,6 +101,8 @@ export interface Lesson {
   summary: string;
   /** Order within the section (lower first). */
   order: number;
+  /** Opening families this lesson covers (dataset name prefixes), for Review's "where you left book" link. */
+  openings?: string[];
   /** Lichess puzzle theme tags for "Practice this theme" (optional). */
   puzzleThemes?: string[];
   steps: LessonStep[];

@@ -1,8 +1,10 @@
 import type { LearnMode } from '../learn/controller';
 import { isComplete, lessonProgress, lessonShare } from '../learn/progress';
 import { SECTIONS, lessonById, lessonsIn } from '../learn/registry';
-import type { PracticeStep, TryStep } from '../learn/types';
+import type { DrillStep, PracticeStep, TryStep } from '../learn/types';
 import { h } from './panel';
+
+const STEP_NAMES = { explain: 'Explain', try: 'Try', practice: 'Practice', drill: 'Drill' } as const;
 
 const btn = (label: string, onclick: () => void, o: { primary?: boolean; disabled?: boolean; title?: string } = {}) =>
   h('button', { type: 'button', class: `btn${o.primary ? ' primary' : ''}`, onclick, disabled: !!o.disabled, title: o.title ?? '' }, label);
@@ -49,7 +51,7 @@ function dots(m: LearnMode): HTMLElement {
     ...l.steps.map((s, i) => h('button', {
       type: 'button',
       class: `lr-dot${i === m.index ? ' current' : ''}${lp.steps[i]?.done ? ' done' : ''}`,
-      title: `Step ${i + 1}: ${s.type === 'explain' ? 'Explain' : s.type === 'try' ? 'Try' : 'Practice'}`,
+      title: `Step ${i + 1}: ${STEP_NAMES[s.type]}`,
       'aria-label': `Step ${i + 1}`,
       onclick: () => m.goToStep(i),
     })));
@@ -106,6 +108,37 @@ function practiceBlock(m: LearnMode, s: PracticeStep): HTMLElement[] {
   return out;
 }
 
+function drillBlock(m: LearnMode, s: DrillStep): HTMLElement[] {
+  const d = m.drill!;
+  const lp = lessonProgress(m.progress, m.lesson!.id);
+  const label = (line: string) => {
+    const n = d.names.get(line);
+    return n ? `${n.name} (${n.eco})` : 'This line';
+  };
+  const out: HTMLElement[] = [h('p', { class: 'lr-prompt' }, s.prompt), h('p', { class: 'small' }, `You play ${s.side === 'w' ? 'White' : 'Black'}. The coach answers with one of the lesson's lines.`)];
+  if (d.offbook) {
+    const o = d.offbook;
+    out.push(h('div', { class: 'lr-flag' },
+      h('p', { class: 'status bad' }, `${o.san} leaves book. Book: ${o.book.map((b) => b.san).join(' or ')}.`),
+      h('p', { class: 'small' }, o.idea),
+      h('div', { class: 'controls' }, btn('Retry', () => m.retry(), { primary: true }))));
+  } else if (d.phase === 'done') {
+    out.push(h('p', { class: 'status good' }, `✓ You played ${label(d.target)} to the end of the book${d.misses ? ` (${d.misses} slip${d.misses === 1 ? '' : 's'} on the way)` : ''}.`),
+      h('div', { class: 'controls' }, btn('Drill another line', () => m.retry(), { primary: true })));
+  } else {
+    out.push(h('p', { class: 'muted small' }, d.phase === 'thinking' ? 'The coach is replying…' : d.chess.history().length ? 'Your move.' : 'Your move: start the game.'));
+    out.push(h('div', { class: 'controls' }, btn('Hint', () => m.hint(), { disabled: d.phase !== 'playing', title: 'Shows the book move (H)' })));
+  }
+  // Each line: how often you finished it and left book on it (the drill brings back the ones you miss most).
+  out.push(h('table', { class: 'lr-lines' },
+    h('tr', {}, h('th', {}, 'Line'), h('th', {}, 'Done'), h('th', {}, 'Missed')),
+    ...s.lines.map((l) => {
+      const st = lp.drill?.[l];
+      return h('tr', { class: l === d.target ? 'current' : '' }, h('td', {}, label(l)), h('td', {}, String(st?.completed ?? 0)), h('td', {}, String(st?.misses ?? 0)));
+    })));
+  return out;
+}
+
 function lesson(m: LearnMode, openTheme?: (theme: string) => void): HTMLElement[] {
   const l = m.lesson!;
   const s = l.steps[m.index];
@@ -113,13 +146,14 @@ function lesson(m: LearnMode, openTheme?: (theme: string) => void): HTMLElement[
   const body = h('div', { class: 'lr-step', 'aria-live': 'polite' });
   if (s.type === 'explain') body.append(h('p', {}, s.text));
   else if (s.type === 'try') body.append(...tryBlock(m, s));
+  else if (s.type === 'drill') body.append(...drillBlock(m, s));
   else body.append(...practiceBlock(m, s));
   const complete = isComplete(m.progress, l);
   const next = m.nextLesson();
   return [
     h('p', { class: 'small' }, h('button', { type: 'button', class: 'link', onclick: () => m.backToList() }, '← All lessons')),
     h('h3', { class: 'lr-title' }, l.title),
-    h('div', { class: 'lr-stepinfo' }, dots(m), h('span', { class: 'muted small' }, `Step ${m.index + 1} of ${l.steps.length} · ${s.type === 'explain' ? 'Explain' : s.type === 'try' ? 'Try' : 'Practice'}`)),
+    h('div', { class: 'lr-stepinfo' }, dots(m), h('span', { class: 'muted small' }, `Step ${m.index + 1} of ${l.steps.length} · ${STEP_NAMES[s.type]}`)),
     body,
     h('div', { class: 'controls lr-nav' },
       btn('◀ Back', () => m.prev(), { disabled: m.index === 0, title: '←' }),

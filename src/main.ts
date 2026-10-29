@@ -16,7 +16,7 @@ import { reviewPly, terminalScore } from './coach/review';
 import { isBad } from './coach/classes';
 import { migrateReview } from './coach/moveClass';
 import { PRESETS } from './config/review';
-import { bookPrefix, identifyOpening, loadBook, type OpeningBook } from './review/openings';
+import { bookPrefix, identifyOpening, loadBook, loadOpeningLines, type OpeningBook } from './review/openings';
 import { ReviewScreen, type ReviewModel } from './reviewScreen/controller';
 import { renderReviewScreen } from './reviewScreen/view';
 import { RuleBasedProvider } from './coach/ruleBased';
@@ -43,7 +43,7 @@ import { renderPuzzlePanel } from './ui/puzzlePanel';
 import { BestMoveMode } from './analysis/controller';
 import { renderAnalysisPanel } from './ui/analysisPanel';
 import { LearnMode } from './learn/controller';
-import { suggestLessons } from './learn/suggest';
+import { lessonForOpening, suggestLessons } from './learn/suggest';
 import { TablebaseClient } from './learn/tablebase';
 import { renderLearnPanel } from './ui/learnPanel';
 import { openTablebaseStore } from './review/cache';
@@ -162,6 +162,7 @@ class App {
       },
       provider: this.provider,
       tablebase: new TablebaseClient({ store: openTablebaseStore() }),
+      openingLines: () => loadOpeningLines(base),
       requestRender: () => this.render(),
       promotionHost: $('board-host'),
     });
@@ -731,7 +732,7 @@ class App {
     const view = this.reviewMode.boardView();
     this.board.render(view);
     renderEvalBar($('evalbar'), view.evalCp, view.orientation, view.showEval);
-    renderReviewPanel($('review-panel'), this.reviewMode, $('coach-line'), (f) => this.resolved.get(f), (f) => void this.analyze(f).catch(() => {}), (phases) => this.lessonSuggestions(phases));
+    renderReviewPanel($('review-panel'), this.reviewMode, $('coach-line'), (f) => this.resolved.get(f), (f) => void this.analyze(f).catch(() => {}), (phases) => this.lessonSuggestions(phases), (name) => this.openingLessonLink(name));
   }
 
   renderAnalysis(): void {
@@ -767,6 +768,12 @@ class App {
         `Your ${name} was graded ${sg.grade} (about ${sg.avgDrop.toFixed(1)} points of winning chance lost per move over ${sg.counted} counted moves).`),
       h('div', { class: 'controls' }, ...sg.lessons.map((l) =>
         h('button', { type: 'button', class: 'btn small', onclick: () => this.openLesson(l.id) }, l.title))));
+  }
+
+  /** "Learn this opening" next to a review's opening name, when a lesson covers it. */
+  openingLessonLink(name: string): HTMLElement | null {
+    const l = lessonForOpening(name);
+    return l ? h('button', { type: 'button', class: 'link', onclick: () => this.openLesson(l.id) }, `Learn this opening →`) : null;
   }
 
   openLesson(id: string): void {
@@ -936,6 +943,7 @@ class App {
       renderReviewScreen(reviewEl, coachLine, screen, (f) => this.resolved.get(f), (f) => void this.analyze(f).catch(() => {}), {
         before: [h2('Game review'), closeButton(() => this.closeScreen())],
         learn: (phases) => this.lessonSuggestions(phases),
+        openingLesson: (name) => this.openingLessonLink(name),
         playFrom: (step, retry) => {
           const at = screen.positionAt(step);
           void this.startPractice({ ...at, label: `your game against the coach, ${positionLabel(at.fen)}`, retry, back: { source: 'play', step: screen.step } });

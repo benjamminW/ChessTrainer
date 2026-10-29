@@ -763,3 +763,7 @@ body.mode-learn .nav { visibility: hidden; }
 .lr-flag { margin: 8px 0; padding: 8px 10px; border-left: 3px solid var(--blunder); background: var(--hover); border-radius: 4px; }
 .lr-nav { margin-top: 12px; }
 .rs-learn { margin: 8px 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--hover); }
+.lr-lines { width: 100%; margin-top: 10px; border-collapse: collapse; font-size: 0.82rem; }
+.lr-lines th, .lr-lines td { text-align: left; padding: 3px 4px; border-bottom: 1px solid var(--border); }
+.lr-lines th:not(:first-child), .lr-lines td:not(:first-child) { text-align: right; width: 4em; }
+.lr-lines tr.current td { font-weight: 600; }
