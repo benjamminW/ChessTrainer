@@ -287,7 +287,10 @@ export class LearnMode {
       ok = drop <= (s.fastest ? 0.5 : s.margin ?? LEARN_CONFIG.tryMargin);
       if (!ok) why = `${san} gives away about ${Math.round(drop)}% of the winning chances.`;
     }
-    if (ok) return { ok, text: `${san} works too. ${s.success}`, details: [], judge, note: note ?? undefined };
+    if (ok) {
+      const solSan = new Chess(s.fen).move(s.solution).san;
+      return { ok, text: `${san} works too.`, details: [`The lesson's move was ${solSan}: ${s.success}`], judge, note: note ?? undefined };
+    }
     const e = await this.explain(s.fen, uci, san, fenAfter);
     const details = [why, ...(e?.details ?? []).slice(0, 2)].filter(Boolean);
     return { ok, text: e?.headline || `${san} isn't it.`, details, judge, note: note ?? undefined };

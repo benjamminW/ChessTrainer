@@ -1,7 +1,7 @@
 /**
  * Every lesson module under ./lessons/<section>/ is picked up here, so adding a lesson is just
  * adding a file (a default export of a Lesson). Sorted by section, then `order`.
- * (Vite expands this glob when it builds the module; a running dev server picks up new files itself.)
+ * (Vite expands this glob when it builds the module; a running dev server picks up new files.)
  */
 import type { Lesson, Section } from './types';
 

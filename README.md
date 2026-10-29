@@ -151,6 +151,24 @@ Each has 3–4 annotated key positions explaining both sides' plans (original te
 
 Every drill line is an exact line of the [Lichess chess-openings dataset](https://github.com/lichess-org/chess-openings) (CC0, `public/openings.json`), which also gives the name and ECO code shown in the drill. The Lichess opening explorer API isn't used. In a review, the opening name has a **Learn this opening →** link when a lesson covers it.
 
+### Middlegame
+
+The middlegame can't be taught as a fixed list of lines, so this section teaches concepts instead. There are six lessons:
+1. Piece activity
+2. Pawn structure and weak squares
+3. King safety and attacking the castled king
+4. Open files and outposts
+5. Trading when ahead
+6. Creating a passed pawn
+
+Each has 2–3 Explain positions and 3–5 Try exercises, written for this app.
+
+- **Accepting a move:** a Try move is accepted when it keeps your winning chances within 3 points of the engine's best (`LEARN_CONFIG.tryMargin`), not only when it matches one move. So "Rfd1 or Rad1" both work, and the panel says "…works too".
+- **Wrong moves** get the coach's explanation of what they gave up.
+- **Exercises with one right answer:** some are built so that the obvious move fails. For example, Rc7 walks into a back-rank mate until you've made luft, and Qxb6 drops a rook to ...Rxd1+ unless the rooks are traded first.
+- **Engine-checked:** every position was chosen with Stockfish and is re-checked by `npm run verify:lessons`.
+- **Practice this theme:** only where Puzzle mode can filter by a matching Lichess theme. King safety links to *sacrifice*, passed pawns to *promotion*, and endgames to *endgame*. The other concepts (piece activity, structure, open files, trading) have no matching filterable theme, so they have no button.
+
 ### Endgames and the tablebase
 
 There are nine endgame lessons:

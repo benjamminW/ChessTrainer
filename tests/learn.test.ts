@@ -138,7 +138,8 @@ describe('Try steps', () => {
     const c4 = await m.judgeTry(step, 'f1c4', 'Bc4', after('f1c4'));
     expect(c4.ok).toBe(true);
     expect(c4.judge).toBe('engine');
-    expect(c4.text).toMatch(/Bc4 works too/);
+    expect(c4.text).toBe('Bc4 works too.');
+    expect(c4.details[0]).toBe("The lesson's move was Bb5: Good.");
     const back = await m.judgeTry(step, 'f3g1', 'Ng1', after('f3g1'));
     expect(back.ok).toBe(false);
     expect(back.text).toBe('That drops material.');
@@ -349,5 +350,26 @@ describe('opening drill', () => {
     expect(m.pickLine([a, b])).toBe(b);
     (m as unknown as { deps: LearnDeps }).deps.random = () => 0.05;
     expect(m.pickLine([a, b])).toBe(a);
+  });
+});
+
+describe('middlegame lessons', () => {
+  const mid = LESSONS.filter((l) => l.section === 'middlegame');
+
+  it('has the six concepts, each with 2-3 Explain steps and 3-5 Try exercises', () => {
+    expect(mid.map((l) => l.id)).toEqual(['piece-activity', 'pawn-structure', 'king-safety', 'open-files-outposts', 'trading-when-ahead', 'passed-pawns']);
+    for (const l of mid) {
+      const ex = l.steps.filter((s) => s.type === 'explain').length;
+      const tries = l.steps.filter((s) => s.type === 'try').length;
+      expect(ex, l.id).toBeGreaterThanOrEqual(2);
+      expect(ex, l.id).toBeLessThanOrEqual(3);
+      expect(tries, l.id).toBeGreaterThanOrEqual(3);
+      expect(tries, l.id).toBeLessThanOrEqual(5);
+    }
+  });
+
+  it('links to puzzle themes only where Puzzle mode can filter by them', () => {
+    const filterable = new Set(['mateIn1', 'mateIn2', 'mateIn3', 'fork', 'pin', 'skewer', 'discoveredAttack', 'hangingPiece', 'backRankMate', 'sacrifice', 'deflection', 'attraction', 'doubleCheck', 'trappedPiece', 'promotion', 'endgame']);
+    for (const l of LESSONS) for (const t of l.puzzleThemes ?? []) expect(filterable.has(t), `${l.id}: ${t}`).toBe(true);
   });
 });
