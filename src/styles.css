@@ -406,6 +406,58 @@ h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color
 .walk-nav { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 14px; }
 #review-prompt .dialog-actions { flex-wrap: wrap; }
 
+/* mode switch */
+.topbar { align-items: center; }
+.mode-switch { display: flex; gap: 2px; padding: 3px; border-radius: 8px; background: var(--hover); margin-right: auto; margin-left: 16px; }
+.mode-tab {
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 4px 14px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.mode-tab[aria-selected='true'] { background: var(--surface); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15); }
+.mode-tab:focus-visible { outline: 2px solid var(--accent); }
+.panel-stack { display: flex; flex-direction: column; gap: 14px; }
+.panel-stack[hidden] { display: none; }
+body.mode-puzzles .player-bar,
+body.mode-puzzles .nav { visibility: hidden; }
+
+/* puzzles */
+.puzzle-card h3 { margin: 12px 0 6px; font-size: 0.85rem; font-weight: 600; }
+.pz-rating { display: flex; justify-content: space-between; align-items: flex-end; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.pz-rating-main { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.pz-rating-label { font-size: 0.8rem; color: var(--muted); width: 100%; }
+.pz-rating-value { font-size: 2rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
+.pz-prov { font-size: 1rem; color: var(--muted); margin-left: 2px; cursor: help; }
+.pz-change { font-weight: 700; font-variant-numeric: tabular-nums; }
+.pz-change.up { color: var(--best); }
+.pz-change.down { color: var(--blunder); }
+.pz-recent { display: flex; align-items: center; gap: 3px; }
+.pz-recent .muted { margin: 0 0 0 6px; }
+.pz-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--border); }
+.pz-dot.solved { background: var(--best); }
+.pz-dot.assisted { background: var(--inaccuracy); }
+.pz-dot.failed { background: var(--blunder); }
+.pz-filters { display: flex; flex-direction: column; gap: 4px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+.pz-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.pz-filters .appearance { margin-top: 6px; }
+.pz-filters select { max-width: 190px; }
+.pz-body { padding-top: 10px; min-height: 120px; }
+.pz-body .status.good { color: var(--best); }
+.pz-body .status.bad { color: var(--blunder); }
+.pz-result { font-weight: 600; font-variant-numeric: tabular-nums; }
+.pz-actions { margin-top: 10px; }
+.pz-meta { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border); }
+.pz-meta p { margin: 0 0 6px; }
+.pz-themes { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+.pz-theme { font-size: 0.78rem; padding: 2px 8px; border-radius: 10px; background: var(--hover); }
+.pz-credit { margin: 14px 0 0; font-size: 0.75rem; color: var(--muted); }
+.pz-credit a, .pz-meta a { color: var(--accent); }
+
 /* move list */
 .moves { position: relative; max-height: 300px; overflow-y: auto; font-variant-numeric: tabular-nums; }
 .move-row { display: grid; grid-template-columns: 36px 1fr 1fr; align-items: center; }

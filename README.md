@@ -13,6 +13,7 @@ Play Stockfish at a strength from 400 to 2500 Elo, and get a plain-English expla
   - Turn off "Offer a game review when the game ends" to skip the question; the **Game review** button still opens it after any finished game.
 - **Lessons.** Explanations of your weaker moves end with a short general tip matched to the error, such as a blunder check after hanging a piece.
 - **Hint-free play.** "Show coach and tips during play" can be switched off. Explanations, tips, the eval bar and arrows then appear only after the game ends. The Hint button still works when you ask for it.
+- **Puzzle mode.** Switch between **Play** and **Puzzles** at the top. Puzzles come from the Lichess puzzle database and are served near your own puzzle rating (separate from the game strength setting), or from a band and theme you pick. Wrong moves are explained by the coach, with an arrow to the right move, and you can retry or see the solution. Failed puzzles come back in **Review mistakes**. See [Puzzles](#puzzles).
 - **Takebacks and branching.** Unlimited takebacks, with a counter. Click any move to review it, then either play a different move or press **Continue from here** on any earlier position to branch (you're asked to confirm first).
 - **Piece counter.** Bars above and below the board show each player's captured pieces and the material lead (e.g. +3).
 - **Board and piece themes.** 13 boards: Brown, Green, Neon (glowing grid with a pulsing frame), Ocean, Walnut, Slate, Coral, Lavender, Midnight, Sakura, Sand, Emerald and Royal. 8 piece sets: Classic, Minimal, Neon, Metal (silver & gold), Toy (glossy blue & red), Pixel (8-bit), Tokens (coins) and Wood. Mix and match; the choice is remembered. See [Customising themes](#customising-themes).
@@ -57,6 +58,46 @@ The repo includes a workflow, `.github/workflows/deploy.yml`. It runs `npm ci` (
 - GitHub Pages serves `.wasm` as `application/wasm`, which is what the engine needs.
 
 If you upgrade the `stockfish` package, update the file name in `scripts/copy-engine.mjs` and `ENGINE_FILE` in `src/engine/uci.ts`.
+
+## Puzzles
+
+Puzzles are from the [Lichess puzzle database](https://database.lichess.org/#puzzles), released under **CC0**. Thank you, Lichess! The app shows the same credit in the puzzle panel and links each puzzle back to lichess.org.
+
+### How a puzzle plays
+
+Each Lichess row's `FEN` is the position **before** the opponent's move. The first move in `Moves` is that opponent move, which the app plays automatically; you then play the second move, the app replies with the third, and so on. The board is turned to your side.
+
+- **Answers:** the listed move is correct, and so is **any move that gives checkmate** (Lichess puzzles can have alternate mates). Anything else counts as wrong.
+- **Wrong move:** the puzzle is marked failed. The coach explains what your move hangs, misses or allows (the same classifier and explanation engine as in games), and a green arrow shows the right move. **Retry** lets you try that position again; **Show solution** plays it out.
+- **Hint:** the first press circles the piece to move, the second shows the arrow. A solve after a hint counts as *assisted*.
+- **Afterwards:** you see the puzzle's rating and themes in plain English, then **Next puzzle**, **Retry puzzle**, or **Analyze**, which opens a free board at the puzzle position with the engine on.
+
+### Puzzle rating
+
+A separate rating, starting at 1200, updated like Elo against each puzzle's Lichess rating: `K × (result − expected)`, with K = 40 for your first 20 rated puzzles and 20 after that (`src/puzzles/rating.ts`).
+
+- **Assisted solves give ±0:** hints can't be used to farm rating, and asking for help is never punished. A wrong move is a normal loss, hint or not.
+- **Review puzzles are unrated:** you've already seen the solution.
+
+Your rating, history (puzzle, result, rating change, date), solved IDs, recently seen IDs and the review queue are saved in `localStorage`. The last 200 puzzles you saw, and those you solved, aren't served again. A failed puzzle comes back in **Review mistakes** after 10 more rated puzzles (20 if you fail it again) and leaves the queue once solved.
+
+### Regenerating the puzzle set
+
+The app ships a sample in `public/puzzles/`: one JSON file per 100-point band from 400 to 2800 (up to 120 puzzles each) plus `index.json`, so it only downloads the band it needs. To rebuild it:
+
+```bash
+node scripts/build-puzzles.mjs
+```
+
+This downloads `lichess_db_puzzle.csv.zst` (≈300 MB) into `data/` (git-ignored) and streams through it. To use a copy you already have:
+
+```bash
+node scripts/build-puzzles.mjs --input path/to/lichess_db_puzzle.csv.zst
+```
+
+Filters and sizes are in `CONFIG` at the top of the script: minimum popularity (80), minimum plays (500), maximum rating deviation (90), puzzles per band (120) and a per-theme quota (5 per band for each filterable theme, so filters like "mate in 3" work at every level). The sample is seeded, so rebuilding from the same file gives the same puzzles. Commit the regenerated `public/puzzles/`, never the raw file. Needs Node 22.15+ (for built-in zstd).
+
+The theme filter list and plain-English theme names are in `src/puzzles/themeNames.json`, shared by the script and the app. Modes are `PuzzleSource`s (`src/puzzles/source.ts`), so another mode, such as a timed rush, only needs a new source and its UI.
 
 ## Customising themes
 
@@ -149,6 +190,8 @@ src/
   coach/gameReview.ts  post-game review: accuracy, key moments, phases
   ui/reviewCard.ts     the game review summary card and eval graph
   ui/walkthrough.ts    the move-by-move review
+  puzzles/             puzzle mode: parser, move line, rating, progress store, selection, sources, controller
+  ui/puzzlePanel.ts    the puzzle side panel
   game/session.ts      game state, takebacks, branching, result detection
   game/pgn.ts          PGN export with comments
   game/persistence.ts  localStorage
@@ -160,6 +203,7 @@ src/
 tests/                 Vitest unit tests
 scripts/copy-engine.mjs      copies Stockfish into public/engine (postinstall)
 scripts/generate-themes.mjs  regenerates the custom board and piece SVGs
+scripts/build-puzzles.mjs    builds public/puzzles/ from the Lichess puzzle database
 ```
 
 ## Libraries

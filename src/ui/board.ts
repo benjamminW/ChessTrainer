@@ -8,8 +8,8 @@ export interface BoardView {
   fen: string;
   orientation: Color;
   turn: Color;
-  /** Color the user may move now, or null to lock the board. */
-  movable: Color | null;
+  /** Color the user may move now ('both' for a free analysis board), or null to lock the board. */
+  movable: Color | 'both' | null;
   dests: Map<string, string[]>;
   lastMove: [string, string] | null;
   check: boolean;
@@ -48,7 +48,7 @@ export class Board {
       check: v.check,
       lastMove: v.lastMove ? (v.lastMove as Key[]) : undefined,
       movable: {
-        color: v.movable ? cgColor(v.movable) : undefined,
+        color: v.movable === 'both' ? 'both' : v.movable ? cgColor(v.movable) : undefined,
         dests: v.dests as Map<Key, Key[]>,
       },
       drawable: { autoShapes: shapes },

@@ -2,4 +2,6 @@ node_modules
 dist
 # Copied from node_modules/stockfish by scripts/copy-engine.mjs
 public/engine
+# Raw Lichess puzzle download (scripts/build-puzzles.mjs); only public/puzzles/ is committed
+data/
 .DS_Store

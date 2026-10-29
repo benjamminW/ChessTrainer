@@ -10,6 +10,10 @@
   <body>
     <header class="topbar">
       <h1>Chess Coach</h1>
+      <div class="mode-switch" role="tablist" aria-label="Mode">
+        <button type="button" role="tab" id="mode-play" class="mode-tab">Play</button>
+        <button type="button" role="tab" id="mode-puzzles" class="mode-tab">Puzzles</button>
+      </div>
       <span id="engine-status" class="engine-status" role="status">Loading engine…</span>
     </header>
 
@@ -36,6 +40,9 @@
       </section>
 
       <aside class="panel">
+        <section class="card puzzle-card" id="puzzle-panel" aria-label="Puzzles" hidden></section>
+
+        <div id="play-panel" class="panel-stack">
         <section class="card" aria-label="Game">
           <p id="status" class="status" role="status"></p>
           <p id="game-info" class="muted small"></p>
@@ -87,6 +94,7 @@
           <h2>Moves</h2>
           <div id="moves" class="moves"></div>
         </section>
+        </div>
       </aside>
     </main>
 

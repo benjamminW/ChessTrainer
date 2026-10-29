@@ -11,6 +11,8 @@ export interface Settings {
   coachDuringPlay: boolean;
   /** Open the game review automatically when a game ends. */
   autoReview: boolean;
+  /** Which mode the app is in. */
+  mode: 'play' | 'puzzles';
   /** An id from BOARDS in src/themes/catalog.ts. */
   boardTheme: string;
   /** An id from PIECE_SETS in src/themes/catalog.ts. */
@@ -22,12 +24,13 @@ export const DEFAULT_SETTINGS: Settings = {
   colorChoice: 'w',
   coachDuringPlay: true,
   autoReview: true,
+  mode: 'play',
   boardTheme: 'brown',
   pieceSet: 'classic',
 };
 
 // localStorage can throw (private mode, blocked storage); the app works without it.
-function read<T>(key: string): T | null {
+export function read<T>(key: string): T | null {
   try {
     const raw = localStorage.getItem(key);
     return raw ? (JSON.parse(raw) as T) : null;
@@ -36,7 +39,7 @@ function read<T>(key: string): T | null {
   }
 }
 
-function write(key: string, value: unknown): void {
+export function write(key: string, value: unknown): void {
   try {
     localStorage.setItem(key, JSON.stringify(value));
   } catch {

@@ -28,6 +28,8 @@ import {
 import { pickPromotion } from './ui/promotion';
 import { buildGameReview } from './coach/gameReview';
 import { renderReviewCard } from './ui/reviewCard';
+import { PuzzleMode } from './puzzles/controller';
+import { renderPuzzlePanel } from './ui/puzzlePanel';
 import { BAD_CLASSES, nextMistake, renderWalkthrough } from './ui/walkthrough';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -63,6 +65,7 @@ class App {
   reviewOpen = false;
   /** Ply index being explained in the move-by-move review, or null when not in it. */
   walk: number | null = null;
+  puzzles: PuzzleMode;
 
   analyses = new Map<string, Promise<Analysis>>();
   resolved = new Map<string, Analysis>();
@@ -87,11 +90,21 @@ class App {
       (e) => this.fail(e),
     );
 
+    this.puzzles = new PuzzleMode({
+      board: this.board,
+      analyze: (fen) => this.analyze(fen),
+      provider: this.provider,
+      baseUrl: base,
+      requestRender: () => this.render(),
+      promotionHost: $('board-host'),
+    });
+
     this.bindUi();
     this.applyAppearance();
     this.render();
-    if (!saved) this.openNewGameDialog(true);
-    else this.resume();
+    if (this.settings.mode === 'puzzles') this.puzzles.enter();
+    else if (!saved) this.openNewGameDialog(true);
+    if (saved) this.resume();
   }
 
   // ------------------------------------------------------------ game flow
@@ -143,6 +156,7 @@ class App {
   }
 
   async onUserMove(from: string, to: string): Promise<void> {
+    if (this.settings.mode === 'puzzles') return this.puzzles.onMove(from, to);
     const s = this.session;
     let promotion: string | undefined;
     if (s.isPromotion(from, to)) {
@@ -399,7 +413,32 @@ class App {
 
   // ------------------------------------------------------------ rendering
 
+  setMode(mode: Settings['mode']): void {
+    if (this.settings.mode === mode) return;
+    this.settings.mode = mode;
+    saveSettings(this.settings);
+    if (mode === 'puzzles') this.puzzles.enter();
+    this.render();
+  }
+
+  /** Puzzle mode draws the shared board, the eval bar (analysis only) and its own panel. */
+  renderPuzzles(): void {
+    const resolved = (fen: string) => this.resolved.get(fen);
+    const view = this.puzzles.boardView(resolved);
+    this.board.render(view);
+    renderEvalBar($('evalbar'), view.evalCp, view.orientation, !!this.puzzles.analysisBoard);
+    renderPuzzlePanel($('puzzle-panel'), this.puzzles, resolved);
+  }
+
   render(): void {
+    const puzzleMode = this.settings.mode === 'puzzles';
+    document.body.classList.toggle('mode-puzzles', puzzleMode);
+    $('play-panel').hidden = puzzleMode;
+    $('puzzle-panel').hidden = !puzzleMode;
+    $('mode-play').setAttribute('aria-selected', String(!puzzleMode));
+    $('mode-puzzles').setAttribute('aria-selected', String(puzzleMode));
+    if (puzzleMode) return this.renderPuzzles();
+
     const s = this.session;
     const over = s.result();
     const coach = this.coachVisible;
@@ -635,6 +674,8 @@ class App {
 
   bindUi(): void {
     $('btn-new').addEventListener('click', () => this.openNewGameDialog(false));
+    $('mode-play').addEventListener('click', () => this.setMode('play'));
+    $('mode-puzzles').addEventListener('click', () => this.setMode('puzzles'));
     $('btn-hint').addEventListener('click', () => this.requestHint());
     const fill = (id: string, options: { id: string; name: string }[]) =>
       $<HTMLSelectElement>(id).replaceChildren(...options.map((o) => new Option(o.name, o.id)));
@@ -686,6 +727,10 @@ class App {
     $('nav-last').addEventListener('click', () => nav(this.session.plies.length));
     document.addEventListener('keydown', (e) => {
       if (document.querySelector('dialog[open]') || (e.target as HTMLElement).closest('input, textarea, select')) return;
+      if (this.settings.mode === 'puzzles') {
+        if (e.key === 'h' && !e.metaKey && !e.ctrlKey && !e.altKey) this.puzzles.hint();
+        return;
+      }
       if (this.walk !== null) {
         const step = this.walk;
         const go: Record<string, () => void> = {
@@ -781,4 +826,6 @@ class App {
   }
 }
 
-new App();
+const app = new App();
+// Dev server only (stripped from production builds): lets tests drive the app from the console.
+if (import.meta.env.DEV) (window as unknown as { __app: App }).__app = app;
