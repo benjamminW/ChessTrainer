@@ -46,9 +46,9 @@ export interface StrengthAnchor extends StrengthParams {
 }
 
 export const STRENGTH_TABLE: StrengthAnchor[] = [
-  { elo: 400,  depth: 5,  multiPv: 8, temperature: 220, maxLoss: 900, mistakeChance: 0.3,  mistakeMinLoss: 150, mistakeMaxLoss: 1000, thinkMinMs: 600, thinkMaxMs: 1800 },
-  { elo: 800,  depth: 6,  multiPv: 8, temperature: 140, maxLoss: 600, mistakeChance: 0.14, mistakeMinLoss: 150, mistakeMaxLoss: 700,  thinkMinMs: 700, thinkMaxMs: 2000 },
-  { elo: 1200, depth: 8,  multiPv: 6, temperature: 70,  maxLoss: 300, mistakeChance: 0,    mistakeMinLoss: 150, mistakeMaxLoss: 400,  thinkMinMs: 800, thinkMaxMs: 2200 },
+  { elo: 400,  depth: 5,  multiPv: 8, temperature: 160, maxLoss: 500, mistakeChance: 0.15, mistakeMinLoss: 150, mistakeMaxLoss: 600,  thinkMinMs: 600, thinkMaxMs: 1800 },
+  { elo: 800,  depth: 6,  multiPv: 8, temperature: 100, maxLoss: 350, mistakeChance: 0.06, mistakeMinLoss: 150, mistakeMaxLoss: 450,  thinkMinMs: 700, thinkMaxMs: 2000 },
+  { elo: 1200, depth: 8,  multiPv: 6, temperature: 55,  maxLoss: 220, mistakeChance: 0,    mistakeMinLoss: 150, mistakeMaxLoss: 400,  thinkMinMs: 800, thinkMaxMs: 2200 },
   { elo: 1600, depth: 10, multiPv: 6, temperature: 35,  maxLoss: 180, mistakeChance: 0,    mistakeMinLoss: 150, mistakeMaxLoss: 300,  thinkMinMs: 800, thinkMaxMs: 2500 },
   { elo: 2000, depth: 12, multiPv: 5, temperature: 15,  maxLoss: 90,  mistakeChance: 0,    mistakeMinLoss: 150, mistakeMaxLoss: 300,  thinkMinMs: 800, thinkMaxMs: 2500 },
   { elo: 2500, depth: 15, multiPv: 5, temperature: 4,   maxLoss: 40,  mistakeChance: 0,    mistakeMinLoss: 150, mistakeMaxLoss: 300,  thinkMinMs: 600, thinkMaxMs: 2000 },

@@ -41,9 +41,9 @@ describe('paramsForElo', () => {
 
   it('interpolates linearly between anchors', () => {
     const p = paramsForElo(1000); // halfway between 800 and 1200
-    expect(p.temperature).toBeCloseTo((140 + 70) / 2);
-    expect(p.mistakeChance).toBeCloseTo(0.07);
-    expect(p.maxLoss).toBeCloseTo(450);
+    expect(p.temperature).toBeCloseTo((100 + 55) / 2);
+    expect(p.mistakeChance).toBeCloseTo(0.03);
+    expect(p.maxLoss).toBeCloseTo(285);
   });
 
   it('clamps outside the table', () => {
