@@ -127,3 +127,20 @@ function checkSetup(fen: string): string | null {
   }
   return null;
 }
+
+/**
+ * Checks that a FEN is a legal position with a game still to play, and normalizes it
+ * (chess.js keeps side to move, castling rights, the en passant square when a capture there
+ * is possible, and both move counters).
+ */
+export function playableFen(fen: string): { ok: true; fen: string } | { ok: false; error: string } {
+  const v = validateFen(fen.trim());
+  if (!v.ok) return { ok: false, error: cleanError(v.error) };
+  const err = checkSetup(fen.trim());
+  if (err) return { ok: false, error: err };
+  const chess = new Chess(fen.trim());
+  if (chess.isCheckmate()) return { ok: false, error: 'That position is already checkmate.' };
+  if (chess.isStalemate()) return { ok: false, error: 'That position is already stalemate.' };
+  if (chess.isInsufficientMaterial()) return { ok: false, error: "Neither side has enough material to mate: it's a draw." };
+  return { ok: true, fen: chess.fen() };
+}

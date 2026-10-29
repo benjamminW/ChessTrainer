@@ -13,7 +13,7 @@ import { read, write } from '../game/persistence';
 import type { Color } from '../types';
 import type { BoardView } from '../ui/board';
 import { pickPromotion } from '../ui/promotion';
-import { START_FEN, autoCastling, compress, expand, parsePosition, setupFen } from './position';
+import { START_FEN, autoCastling, compress, expand, parsePosition, setupFen } from '../game/position';
 
 const STORE_KEY = 'chess-coach:analysis:v1';
 

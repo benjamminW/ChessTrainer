@@ -57,6 +57,7 @@
         <section class="card analysis-card" id="analysis-panel" aria-label="Best move" hidden></section>
 
         <div id="play-panel" class="panel-stack">
+        <section class="card practice-card" id="practice-card" aria-label="Practice" hidden></section>
         <section class="card" aria-label="Game">
           <p id="status" class="status" role="status"></p>
           <p id="game-info" class="muted small"></p>
@@ -140,6 +141,36 @@
           <button type="submit" value="summary" class="btn">Just the summary</button>
           <button type="submit" value="key" class="btn">Jump to key moments</button>
           <button type="submit" value="walk" class="btn primary">Go through it move by move</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="practice-dialog" aria-labelledby="pd-title">
+      <form method="dialog" class="dialog-form">
+        <h2 id="pd-title">Play from here</h2>
+        <p id="pd-where" class="muted small"></p>
+        <fieldset class="field">
+          <legend>Play as</legend>
+          <label><input type="radio" name="pd-side" value="mover" checked /> <span id="pd-mover"></span></label>
+          <label><input type="radio" name="pd-side" value="other" /> <span id="pd-other"></span></label>
+        </fieldset>
+        <label class="field">
+          <span>Coach strength: <strong id="pd-elo-out">1200</strong></span>
+          <input type="range" id="pd-elo" min="400" max="2500" step="100" value="1200" />
+        </label>
+        <label class="field">
+          <span>Goal</span>
+          <select id="pd-goal">
+            <option value="convert">Convert the win</option>
+            <option value="hold">Hold the draw</option>
+            <option value="win">Win from here</option>
+            <option value="free">Free play</option>
+          </select>
+          <span id="pd-goal-why" class="muted small"></span>
+        </label>
+        <div class="dialog-actions">
+          <button type="submit" value="cancel" class="btn">Cancel</button>
+          <button type="submit" value="start" class="btn primary">Start</button>
         </div>
       </form>
     </dialog>

@@ -121,6 +121,13 @@ export class ReviewScreen {
     return value;
   }
 
+  /** The position after `step` plies, its White-POV eval, and the evals from there to the end of the game. */
+  positionAt(step: number): { fen: string; evalWhite: number | null; originalEvals: (number | null)[] } {
+    const fen = step === 0 ? this.model.startFen : this.plies[step - 1].fenAfter;
+    const evals = this.review().evals;
+    return { fen, evalWhite: evals[step] ?? null, originalEvals: evals.slice(step) };
+  }
+
   // ------------------------------------------------------------ navigation
 
   goTo(n: number): void {

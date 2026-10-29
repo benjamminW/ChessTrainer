@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BestMoveMode, type AnalysisDeps } from '../src/analysis/controller';
-import { START_FEN, autoCastling, compress, expand, parsePosition, setupFen } from '../src/analysis/position';
+import { START_FEN, autoCastling, compress, expand, parsePosition, setupFen } from '../src/game/position';
 import type { Analysis } from '../src/engine/uci';
 
 describe('parsePosition', () => {

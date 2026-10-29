@@ -8,6 +8,7 @@ import { PRESETS, REVIEW_CONFIG, type AnalysisPreset } from '../config/review';
 import type { Analysis, SearchOptions } from '../engine/uci';
 import { read, write } from '../game/persistence';
 import type { Puzzle } from '../puzzles/types';
+import { positionLabel, type PracticeRequest } from '../game/practice';
 import type { BoardView } from '../ui/board';
 import { AnalysisQueue, toPlies, withReviews } from './analyzer';
 import { migrateAnalysis } from './migrate';
@@ -52,8 +53,8 @@ export interface ReviewDeps {
   provider: ExplanationProvider;
   baseUrl: string;
   requestRender(): void;
-  /** Start a Play-mode game from this position, with you to move. */
-  playFrom(fen: string, color: Color): void;
+  /** "Play from here": Play asks how to play it and starts the game. */
+  practice(req: PracticeRequest): void;
   /** Add a puzzle to Puzzle mode's "My mistakes" set. Returns false if it was already there. */
   savePuzzle(p: Puzzle, from: { label: string; url: string }): boolean;
   hasPuzzle(id: string): boolean;
@@ -406,11 +407,32 @@ export class ReviewMode {
     return sc.onBoardMove(from, to, promo);
   }
 
-  playFrom(index: number): void {
+  /** Practice from the position after `step` plies; Back to review returns to the step on screen now. */
+  playFrom(step: number, retry: boolean): void {
     const og = this.current;
     if (!og) return;
-    const fen = og.imported.moves[index].fenBefore;
-    this.deps.playFrom(fen, new Chess(fen).turn());
+    const at = og.screen.positionAt(step);
+    this.deps.practice({
+      ...at,
+      label: `your game ${this.label(og.game)}, ${positionLabel(at.fen)}`,
+      retry,
+      back: { source: 'review', url: og.game.url, step: og.screen.step },
+    });
+  }
+
+  /** Back from a practice game: the same game at the same step (reopened if it was closed). */
+  returnTo(url: string, step: number): boolean {
+    const og = this.current;
+    if (og?.game.url === url) {
+      this.view = 'game';
+      if (og.screen.mode.kind === 'retry') og.screen.exitRetry();
+      if (og.screen.mode.kind === 'line') og.screen.exitLine();
+      og.screen.goTo(step);
+      return true;
+    }
+    if (!this.games.some((g) => g.url === url)) return false;
+    this.openGame(url, step);
+    return true;
   }
 
   puzzleFor(index: number): Puzzle | null {

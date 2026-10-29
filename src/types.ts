@@ -1,3 +1,5 @@
+import type { PracticeOrigin } from './game/practice';
+
 import type { Color } from 'chess.js';
 
 export type { Color };
@@ -90,4 +92,16 @@ export interface GameState {
   hintsUsed?: number;
   resigned: Color | null;
   startedAt: string;
+  /** Set when the game started from a position other than the opening: where it came from. */
+  context?: PositionContext;
+  /** Set for "Play from here" practice games: the goal and the review position to go back to. */
+  practice?: PracticeOrigin;
+}
+
+/** Where a game loaded from a position came from (shown in Play; not replayed). */
+export interface PositionContext {
+  /** e.g. "Your game vs magnus, move 23". */
+  label: string;
+  /** The earlier moves that led here (UCI from `startFen`), for reference. */
+  history?: { startFen: string; moves: string[] };
 }

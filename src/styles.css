@@ -713,3 +713,20 @@ input[type='range'] { width: 100%; accent-color: var(--accent); }
   .topbar { padding: 12px 16px; }
   .moves { max-height: 220px; }
 }
+
+/* practice games (Play from here) */
+.practice-card h2 { margin-bottom: 4px; }
+.pc-verdict.good { color: var(--best); }
+.pc-verdict.bad { color: var(--blunder); }
+.pc-graph { margin-top: 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--hover); }
+.pc-graph svg { display: block; width: 100%; height: 90px; }
+.pc-graph .pc-mid { stroke: var(--border); stroke-width: 1; }
+.pc-graph polyline { fill: none; stroke-width: 2; vector-effect: non-scaling-stroke; }
+.pc-graph .pc-mine { stroke: var(--accent); }
+.pc-graph .pc-original { stroke: var(--muted); stroke-dasharray: 4 3; }
+.pc-legend { margin-top: 4px; }
+.pc-key { display: inline-block; width: 16px; height: 0; vertical-align: middle; border-top: 2px solid var(--accent); }
+.pc-key.original { border-top: 2px dashed var(--muted); }
+.rs-practice { margin-top: 6px; }
+#pd-goal { font: inherit; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); }
+#pd-goal-why { display: block; margin-top: 4px; }

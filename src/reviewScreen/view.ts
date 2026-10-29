@@ -1,4 +1,5 @@
 /** Rendering for the shared review screen. */
+import { Chess } from 'chess.js';
 import { CLASS_INFO, classSlug, isBad } from '../coach/classes';
 import { mateIn } from '../coach/classify';
 import { lineToSan } from '../coach/facts';
@@ -30,6 +31,8 @@ export interface ScreenViewOptions {
   extras?: HTMLElement[];
   /** Shown above the summary (e.g. a back link). */
   before?: HTMLElement[];
+  /** "Play from here" from a review step (plies applied); `retry` = just before one of your blunders. */
+  playFrom?: (step: number, retry: boolean) => void;
 }
 
 // ---------------------------------------------------------------- summary
@@ -316,6 +319,29 @@ function nav(s: ReviewScreen): HTMLElement {
   );
 }
 
+/** Your blunder: practice from just before it ("Try this position again"); otherwise from the position before the move. */
+function practiceButton(s: ReviewScreen, index: number, o: ScreenViewOptions): HTMLElement | null {
+  if (!o.playFrom) return null;
+  const p = s.plies[index];
+  const retry = p.by === 'user' && p.review?.classification === 'Blunder';
+  return h('button', { type: 'button', class: 'btn small', onclick: () => o.playFrom!(index, retry), title: 'Play this position against the coach' },
+    retry ? 'Try this position again' : 'Play from here');
+}
+
+/** Practice buttons for the position on the board. */
+function practiceRow(s: ReviewScreen, o: ScreenViewOptions): HTMLElement | null {
+  if (!o.playFrom || s.mode.kind !== 'game') return null;
+  const step = s.step;
+  const fen = step === 0 ? s.model.startFen : s.plies[step - 1].fenAfter;
+  const over = new Chess(fen).isGameOver();
+  const last = step > 0 ? s.plies[step - 1] : null;
+  const blunder = !!last && last.by === 'user' && last.review?.classification === 'Blunder';
+  return h('div', { class: 'controls rs-practice' },
+    h('button', { type: 'button', class: 'btn small', onclick: () => o.playFrom!(step, false), disabled: over, title: over ? 'The game is over in this position' : 'Play this position against the coach' }, 'Play from here'),
+    blunder ? h('button', { type: 'button', class: 'btn small', onclick: () => o.playFrom!(step - 1, true), title: 'Play the position before your blunder again' }, 'Try this position again') : null,
+  );
+}
+
 function moveList(s: ReviewScreen): HTMLElement {
   const box = h('div', { class: 'rs-moves moves', role: 'list' });
   let row: HTMLElement | null = null;
@@ -349,7 +375,9 @@ function keyMoments(s: ReviewScreen, o: ScreenViewOptions): HTMLElement {
     return h('li', { class: 'rs-km' },
       h('button', { type: 'button', class: 'link', onclick: () => s.showMoment(k.index) }, classIcon(k.cls, 14), ` ${plyLabel(p)}`),
       h('span', { class: 'muted small' }, ` ${k.cls}${k.delta < -0.5 ? `, −${Math.round(-k.delta)}%` : ''}`),
-      mine && o.momentActions ? h('span', { class: 'rs-km-actions' }, ...o.momentActions(k.index).filter((x): x is HTMLElement => !!x)) : null,
+      mine && (o.momentActions || o.playFrom)
+        ? h('span', { class: 'rs-km-actions' }, ...[practiceButton(s, k.index, o), ...(o.momentActions?.(k.index) ?? [])].filter((x): x is HTMLElement => !!x))
+        : null,
     );
   };
   return h('div', { class: 'rs-key' },
@@ -395,6 +423,6 @@ export function renderReviewScreen(
   requestAnalysis: (fen: string) => void,
   o: ScreenViewOptions = {},
 ): void {
-  panel.replaceChildren(...(o.before ?? []), summaryCard(s), graph(s), nav(s), moveList(s), keyMoments(s, o), linesPanel(s, resolved, requestAnalysis), ...(o.extras ?? []));
+  panel.replaceChildren(...(o.before ?? []), summaryCard(s), graph(s), nav(s), ...[practiceRow(s, o)].filter((x): x is HTMLElement => !!x), moveList(s), keyMoments(s, o), linesPanel(s, resolved, requestAnalysis), ...(o.extras ?? []));
   renderCoachLine(coachLine, s);
 }

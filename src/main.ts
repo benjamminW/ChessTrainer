@@ -24,8 +24,11 @@ import { ENGINE_BUILDS, Engine, SearchCancelled, type Analysis, type EngineBuild
 import { loadGame, loadSettings, saveGame, saveSettings, type Settings } from './game/persistence';
 import { materialSummary } from './game/material';
 import { exportPgn } from './game/pgn';
-import { Session, newGameState } from './game/session';
-import type { Color, PlyRecord } from './types';
+import { Session, newGameState, startFromPosition } from './game/session';
+import type { Color, GameState, PlyRecord, PositionContext } from './types';
+import { judgeGoal, positionLabel, winTrajectory, type PracticeOrigin, type PracticeRequest } from './game/practice';
+import { askPractice } from './ui/practiceDialog';
+import { renderPracticeCard, type PracticeView } from './ui/practiceCard';
 import { Chess } from 'chess.js';
 import { Board, type BoardView } from './ui/board';
 import {
@@ -118,7 +121,7 @@ class App {
       provider: this.provider,
       baseUrl: base,
       requestRender: () => this.render(),
-      playFrom: (fen, color) => void this.playFrom(fen, color),
+      practice: (req) => void this.startPractice(req),
       savePuzzle: (p, from) => this.puzzles.addCustom(p, from),
       hasPuzzle: (id) => this.puzzles.stats.custom.some((c) => c.puzzle[0] === id),
       coachAnalyze: (fen) => this.analyze(fen),
@@ -359,7 +362,8 @@ class App {
   /** When a game has just ended, open the review if the user turned that on. */
   /** When a game has just ended, offer the review (if the user turned that on). */
   openReviewIfOver(): void {
-    if (!this.session.isOver() || !this.settings.autoReview) return;
+    // Practice games show their own result card (goal, comparison, Review this game) instead.
+    if (!this.session.isOver() || !this.settings.autoReview || this.session.state.practice) return;
     this.session.goTo(this.session.plies.length);
     void this.askToReview();
   }
@@ -600,19 +604,97 @@ class App {
     this.render();
   }
 
-  /** "Play from here" in Review mode: a new game against the coach from that position, you to move. */
-  async playFrom(fen: string, color: Color): Promise<void> {
+  /** A new game against the coach from a position (see startFromPosition). False if refused or cancelled. */
+  async playFrom(fen: string, color: Color, o: { context?: PositionContext; practice?: PracticeOrigin; elo?: number; replaceFinished?: boolean } = {}): Promise<boolean> {
+    const start = startFromPosition(fen, { userColor: color, elo: o.elo ?? this.settings.elo, context: o.context });
+    if (!start.ok) {
+      await this.confirm(`Can't play from this position: ${start.error}`, 'OK');
+      return false;
+    }
     const s = this.session;
-    if (s.plies.length && !s.isOver() && !(await this.confirm('Start a new game from this position? Your current game will be replaced.', 'Start'))) return;
+    if (!o.replaceFinished && s.plies.length && !s.isOver() && !(await this.confirm('Start a new game from this position? Your current game will be replaced.', 'Start'))) return false;
+    if (o.practice) start.state.practice = o.practice;
     this.invalidate();
     this.undone = null;
     this.hint = null;
-    this.session = new Session(newGameState(color, this.settings.elo, fen));
+    this.session = new Session(start.state);
     this.orientation = color;
     this.persist();
     this.setMode('play');
     this.render();
     this.resume();
+    return true;
+  }
+
+  /** "Play from here" from a review: ask how to play it, then start a practice game that remembers the way back. */
+  async startPractice(req: PracticeRequest): Promise<void> {
+    const choice = await askPractice({ fen: req.fen, evalWhite: req.evalWhite, label: req.label, retry: req.retry, elo: this.settings.elo });
+    if (!choice) return;
+    this.settings.elo = choice.elo;
+    saveSettings(this.settings);
+    const origin: PracticeOrigin = {
+      source: req.back.source,
+      url: req.back.url,
+      // From Play's own review, the finished game is kept so Back to review can restore it.
+      game: req.back.source === 'play' ? stripPractice(this.session.state) : undefined,
+      step: req.back.step,
+      goal: choice.goal,
+      evalStart: req.evalWhite,
+      originalEvals: req.originalEvals,
+      retry: req.retry,
+      label: req.label,
+    };
+    await this.playFrom(req.fen, choice.userColor, { context: { label: req.label }, practice: origin, elo: choice.elo, replaceFinished: req.back.source === 'play' });
+  }
+
+  /** Same position, same side and goal, a fresh game. */
+  async practiceAgain(): Promise<void> {
+    const st = this.session.state;
+    if (!st.practice) return;
+    await this.playFrom(st.startFen, st.userColor, { context: st.context, practice: st.practice, elo: st.elo, replaceFinished: true });
+  }
+
+  /** What the practice card shows: the goal, and once the game is over, the verdict and both games' winning chances. */
+  practiceView(): PracticeView | null {
+    const s = this.session;
+    const o = s.state.practice;
+    if (!o) return null;
+    const result = s.result();
+    const mine = [o.evalStart, ...s.plies.map((p) => p.review?.evalAfter ?? null)];
+    return {
+      origin: o,
+      result: result ? judgeGoal(o.goal, result, this.userColor) : null,
+      pending: s.plies.filter((p) => !p.review).length,
+      mine: winTrajectory(mine, this.userColor),
+      original: winTrajectory(o.originalEvals, this.userColor),
+      reviewOpen: !!this.screen,
+    };
+  }
+
+  /** Back to the exact review position the practice game came from. */
+  async backToReview(): Promise<void> {
+    const s = this.session;
+    const o = s.state.practice;
+    if (!o) return;
+    if (o.source === 'play') {
+      if (!o.game) return;
+      if (s.plies.length && !s.isOver() && !(await this.confirm('Leave this practice game and go back to the review?', 'Go back'))) return;
+      this.invalidate();
+      this.session = new Session(o.game);
+      this.orientation = o.game.userColor;
+      this.persist();
+      this.setMode('play');
+      this.openScreen('summary');
+      this.screen?.goTo(o.step);
+      this.render();
+      return;
+    }
+    // Review mode: the practice game stays in Play; the Chess.com game reopens at the same step.
+    this.setMode('review');
+    if (!o.url || !this.reviewMode.returnTo(o.url, o.step)) {
+      await this.confirm("That game isn't loaded in Review right now. Load your games there and open it again.", 'OK');
+    }
+    this.render();
   }
 
   renderReview(): void {
@@ -745,6 +827,7 @@ class App {
     const hints = s.state.hintsUsed ?? 0;
     $('game-info').textContent =
       `You play ${colorName(this.userColor)} against the coach at ${s.state.elo} Elo.` +
+      (s.state.context ? ` Started from a position: ${s.state.context.label}.` : '') +
       (hints ? ` Hints used: ${hints}.` : '');
     const level = this.hintLevel(fen);
     const hintBtn = $<HTMLButtonElement>('btn-hint');
@@ -788,8 +871,17 @@ class App {
     if (screen) {
       renderReviewScreen(reviewEl, coachLine, screen, (f) => this.resolved.get(f), (f) => void this.analyze(f).catch(() => {}), {
         before: [h2('Game review'), closeButton(() => this.closeScreen())],
+        playFrom: (step, retry) => {
+          const at = screen.positionAt(step);
+          void this.startPractice({ ...at, label: `your game against the coach, ${positionLabel(at.fen)}`, retry, back: { source: 'play', step: screen.step } });
+        },
       });
     }
+    renderPracticeCard($('practice-card'), this.practiceView(), {
+      back: () => void this.backToReview(),
+      again: () => void this.practiceAgain(),
+      review: () => this.openScreen('summary'),
+    });
 
     // Explanation
     const view: ExplainView = { kind: 'start' };
@@ -1024,6 +1116,12 @@ class App {
 const app = new App();
 // Dev server only (stripped from production builds): lets tests drive the app from the console.
 if (import.meta.env.DEV) (window as unknown as { __app: App }).__app = app;
+
+/** A finished game kept for Back to review (without its own practice link, so they don't nest). */
+function stripPractice(st: GameState): GameState {
+  const { practice: _p, ...rest } = st;
+  return structuredClone(rest);
+}
 
 function isPromotionMove(fen: string, from: string, to: string): boolean {
   return new Chess(fen).moves({ verbose: true }).some((m) => m.from === from && m.to === to && !!m.promotion);

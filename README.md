@@ -97,7 +97,7 @@ Accuracy, the estimated game rating and phase grades are computed exactly as in 
 
 ### What you get
 
-- **Per game:** players, ratings, result, time control, date and a link to the game; an eval graph you can click (the biggest swings are marked); accuracy, move-class counts and ACPL for both sides; the 3–5 moves that cost you the most winning chances, each with the better move (arrow on the board), the explanation and a tip; one or two "only move" finds; ACPL per phase; and, when the PGN has clocks, time trouble (moves under 30 s) and long thinks that still went wrong. Each key moment has **Play from here** (starts a game against the coach from that position) and **Save as puzzle**.
+- **Per game:** players, ratings, result, time control, date and a link to the game; an eval graph you can click (the biggest swings are marked); accuracy, move-class counts and ACPL for both sides; the 3–5 moves that cost you the most winning chances, each with the better move (arrow on the board), the explanation and a tip; one or two "only move" finds; ACPL per phase; and, when the PGN has clocks, time trouble (moves under 30 s) and long thinks that still went wrong. Every position has **Play from here** (see [Play from here](#play-from-here)), and each of your key moments also has **Save as puzzle**.
 - **Patterns** across all analyzed games that match the filters: record and accuracy by color and time class; your most-played openings with score and ACPL; ACPL by phase; mistake types as detected by the coach; blunder rate under 30 seconds versus with more time; and the top weaknesses, each stated with its count and the sample it's measured in, with example positions you can click. Anything with fewer than 5 instances is marked **too few to call**.
 - **Save as puzzle** turns a mistake into a puzzle in Puzzle mode's **My mistakes** set: it starts with the opponent's previous move (auto-played, like Lichess puzzles) and the solution is the engine's best line, up to 3 of your moves. These puzzles also enter the Review-mistakes queue, have no rating, and never affect your puzzle rating; only solved/failed counts are kept. Note that only the engine's line (or any checkmate) is accepted.
 
@@ -107,6 +107,31 @@ The username and filters are kept in `localStorage`; analyses (keyed by game URL
 
 - **Clear analysis cache** deletes the cached analyses and game lists.
 - **Forget this username and all cached analysis** also removes the username and filters.
+
+## Play from here
+
+Both reviews (Review mode's Chess.com games and the review of a game against the coach) can turn any position into a practice game.
+
+- **Where:** a **Play from here** button under the review's move buttons, for the position on the board, and on each of your key moments. On your blunders the button is **Try this position again**, which starts from just before the blunder, with the goal based on the eval before it.
+- **The dialog:**
+  - **Play as:** the side to move, or the other side.
+  - **Coach strength:** starts at your last-used setting and is saved when you change it.
+  - **Goal:** suggested from your winning chance at that position (same win% formula as the move classes), and you can change it. 70% or more: **Convert the win**. 55–70%: **Win from here**. Below 55%: **Hold the draw**. **Free play** is never judged, and is preselected when the position hasn't been analyzed. The thresholds are `GOAL_CONFIG` in `src/game/practice.ts`.
+- **During the game:** it's a normal Play game, with takebacks, hints and explanations. A card at the top of the Play panel shows where it came from, the goal and **Back to review**.
+- **Back to review:** returns to the exact step you were on.
+  - From a game against the coach, the finished game is kept with the practice game and restored, with its review open at that step.
+  - From Review mode, the Chess.com game reopens at that step with the review's state as you left it. The practice game stays in Play.
+  - If you leave mid-game, it asks first.
+- **At the end:** the card shows the result and whether you met the goal, and a graph of your winning chances in this game against the original game from the same position. It offers **Review this game** (the normal review), **Try again** (same position, side and goal) and **Back to review**. The usual "review this game?" popup is skipped for practice games.
+
+## Starting a game from any position
+
+Every "play this position" feature goes through one function, `startFromPosition(fen, { userColor, elo, context? })` in `src/game/session.ts`. Review's **Play from here** uses it now, and Learn's practice steps will too.
+
+- **Checks.** It accepts any legal FEN and refuses, with a reason, a position that's illegal (a missing king, the side that just moved in check) or already over (checkmate, stalemate, not enough material).
+- **What it keeps.** Side to move, castling rights, the en passant square (when a capture there is possible) and both move counters.
+- **History starts at that position.** Repetition is counted from there and takebacks stop there. The optional `context` (a label like "your game vs X, move 23 with Black to play", plus the earlier moves) is shown in Play but never replayed.
+- **Saving and export.** The saved game keeps the starting FEN, so a refresh restores it. Exported PGN includes `[SetUp "1"]` and `[FEN "…"]`.
 
 ## Best move
 
@@ -322,7 +347,10 @@ src/
   coach/gameReview.ts  post-game review: accuracy, key moments, phases
   puzzles/             puzzle mode: parser, move line, rating, progress store, selection, sources, controller
   ui/puzzlePanel.ts    the puzzle side panel
-  analysis/            Best move tab: FEN/PGN parsing, board setup checks, controller
+  analysis/            Best move tab controller
+  game/position.ts     FEN/PGN parsing, board setup checks, playable-position check
+  game/practice.ts     Play from here: goals, judging, the way back to the review
+  ui/practiceDialog.ts, ui/practiceCard.ts   its dialog and Play-panel card
   config/analysis.ts   Best move depths and line count
   ui/analysisPanel.ts  the Best move side panel
   review/              Review mode: Chess.com client, PGN import, IndexedDB cache, analysis queue,

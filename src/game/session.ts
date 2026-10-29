@@ -1,5 +1,6 @@
 import { Chess, DEFAULT_POSITION, type Move, type Square } from 'chess.js';
-import type { Color, GameResult, GameState, PlyRecord } from '../types';
+import type { Color, GameResult, GameState, PlyRecord, PositionContext } from '../types';
+import { playableFen } from './position';
 
 export function uciOf(m: Pick<Move, 'from' | 'to' | 'promotion'>): string {
   return m.from + m.to + (m.promotion ?? '');
@@ -25,6 +26,24 @@ export function newGameState(userColor: Color, elo: number, startFen = DEFAULT_P
     resigned: null,
     startedAt: new Date().toISOString(),
   };
+}
+
+/**
+ * The one way to start a game from any position (Review's "Play from here", the Best move tab,
+ * Learn's practice steps). Checks the FEN and keeps its side to move, castling rights,
+ * en passant square and move counters. The game's history starts at this position: repetition
+ * is counted from here and takebacks can't go back past it. `context` (optional) records where
+ * the position came from, for display.
+ */
+export function startFromPosition(
+  fen: string,
+  o: { userColor: Color; elo: number; context?: PositionContext },
+): { ok: true; state: GameState } | { ok: false; error: string } {
+  const r = playableFen(fen);
+  if (!r.ok) return r;
+  const state = newGameState(o.userColor, o.elo, r.fen);
+  if (o.context) state.context = o.context;
+  return { ok: true, state };
 }
 
 /** Game result for the position reached after the given chess.js history, or null if ongoing. */

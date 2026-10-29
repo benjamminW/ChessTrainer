@@ -191,7 +191,6 @@ function momentActions(m: ReviewMode, og: OpenGame, index: number): (HTMLElement
   const canPuzzle = !!m.puzzleFor(index);
   const saved = m.isSaved(index);
   return [
-    h('button', { type: 'button', class: 'btn small', onclick: () => m.playFrom(index), title: 'Play this position against the coach' }, 'Play from here'),
     og.screen.canShowBetter(index)
       ? h('button', { type: 'button', class: 'btn small', onclick: () => m.saveAsPuzzle(index), disabled: !canPuzzle || saved, title: canPuzzle ? '' : 'Needs an opponent move before it' }, saved ? 'Saved ✓' : 'Save as puzzle')
       : null,
@@ -285,7 +284,7 @@ export function renderReviewPanel(
     if (og) {
       const { before, extras } = gameExtras(m, og);
       og.screen.setModel(m.model(og));
-      renderReviewScreen(body, coachLine, og.screen, resolved, requestAnalysis, { before, extras, momentActions: (i) => momentActions(m, og, i) });
+      renderReviewScreen(body, coachLine, og.screen, resolved, requestAnalysis, { before, extras, momentActions: (i) => momentActions(m, og, i), playFrom: (step, retry) => m.playFrom(step, retry) });
     } else body.append(...(m.view === 'patterns' ? patternsView(m) : gamesView(m)));
     el.append(body);
     el.append(
