@@ -5,17 +5,16 @@
 import { Chess } from 'chess.js';
 import type { Classification, Color, PlyRecord } from '../types';
 import { BAD_CLASSES, CLASS_ORDER, ERROR_CLASSES } from './classes';
-import { estimateRating, phaseGrade, type PhaseGrade, type RatingEstimate } from './estimate';
+import { ESTIMATE_CONFIG, estimateRating, phaseGrade, type PhaseGrade, type RatingEstimate, type TimeClass } from './estimate';
 import { gamePhase, type Phase } from './facts';
 import { formatEval } from './format';
+import { boardFacts } from './moveClass';
+import { countMoves, isEvenRecapture, winPercent, type RatedMove } from './ratingMoves';
+
+export { winPercent };
 
 /** All classes, best to worst (for count tables). */
 export const CLASSES: Classification[] = CLASS_ORDER;
-
-/** Chance of winning (0–100) for a centipawn eval from the mover's POV (lichess's formula). */
-export function winPercent(cp: number): number {
-  return 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * cp)) - 1);
-}
 
 /** Accuracy of one move (0–100) from the mover's win% before and after it (lichess's formula). */
 export function moveAccuracy(winBefore: number, winAfter: number): number {
@@ -30,8 +29,10 @@ export interface SideStats {
   accuracy: number | null;
   /** Average centipawn loss, or null with no reviewed moves. */
   acpl: number | null;
-  /** This app's estimated performance rating (see coach/estimate.ts). */
+  /** This app's estimated rating range from the counted moves (see coach/estimate.ts). */
   rating: RatingEstimate | null;
+  /** Average win% drop over the counted moves, or null with none. */
+  countedAvgDrop: number | null;
   /** Per-phase stats and grades for this side (phases that never happened are left out). */
   phases: PhaseStats[];
 }
@@ -64,6 +65,8 @@ export interface PhaseStats {
   avgDrop: number | null;
   grade: PhaseGrade | null;
   mistakes: number;
+  /** Moves behind `avgDrop` and `grade` (counted moves only). */
+  counted: number;
 }
 
 export interface GameReview {
@@ -78,6 +81,17 @@ export interface GameReview {
   evals: (number | null)[];
   /** Plain-English summary lines. */
   summary: string[];
+  /** The game was reviewed before the current rating method, so its estimate was recalculated. */
+  ratingRecalculated: boolean;
+}
+
+/** What the rating estimate needs to know about the game beyond its moves. */
+export interface ReviewContext {
+  timeClass?: TimeClass | null;
+  /** Ratings from the game header (none for games against the coach). */
+  known?: Partial<Record<Color, number | null>>;
+  /** When the game was analyzed or played (ISO date), to flag estimates made the old way. */
+  analyzedAt?: string | null;
 }
 
 const BAD = BAD_CLASSES;
@@ -96,13 +110,46 @@ function phaseList(m: Map<Phase, PhaseAcc>): PhaseStats[] {
     .map((ph) => {
       const x = m.get(ph)!;
       const avgDrop = mean(x.drop);
-      return { phase: ph, moves: x.acc.length, accuracy: mean(x.acc), acpl: mean(x.loss), avgDrop, grade: avgDrop === null ? null : phaseGrade(avgDrop), mistakes: x.mistakes };
+      return { phase: ph, moves: x.acc.length, accuracy: mean(x.acc), acpl: mean(x.loss), avgDrop, grade: avgDrop === null ? null : phaseGrade(avgDrop), mistakes: x.mistakes, counted: x.drop.length };
     });
 }
 
 const PHASE_NAMES: Record<Phase, string> = { opening: 'opening', middlegame: 'middlegame', endgame: 'endgame' };
 
-export function buildGameReview(plies: PlyRecord[], userColor: Color): GameReview {
+/** The rating inputs for each reviewed ply (in order), with the index of the ply. */
+function ratedMoves(plies: PlyRecord[]): { index: number; move: RatedMove }[] {
+  const out: { index: number; move: RatedMove }[] = [];
+  plies.forEach((p, i) => {
+    const r = p.review;
+    if (!r) return;
+    const s = sign(p.color);
+    const bestCp = r.evalBefore * s;
+    const prev = plies[i - 1] ?? null;
+    out.push({
+      index: i,
+      move: {
+        color: p.color,
+        winBefore: winPercent(bestCp),
+        winAfter: winPercent(r.evalAfter * s),
+        inBook: r.classification === 'Book',
+        legalMoves: boardFacts(p, prev).legalMoves,
+        gapWin: r.gap === undefined || r.gap === null ? null : winPercent(bestCp) - winPercent(bestCp - r.gap),
+        evenRecapture: isEvenRecapture(p.fenBefore, p.uci, prev),
+      },
+    });
+  });
+  return out;
+}
+
+export function buildGameReview(plies: PlyRecord[], userColor: Color, ctx: ReviewContext = {}): GameReview {
+  const rated = ratedMoves(plies);
+  const counting = countMoves(rated.map((r) => r.move));
+  /** Ply index → counted (true) or left out of the rating and phase grades (false). */
+  const countedAt = new Map(rated.map((r, k) => [r.index, counting.reasons[k] === null]));
+  const depthOf = (c: Color) => {
+    const ds = plies.filter((p, i) => p.color === c && countedAt.get(i)).map((p) => p.review?.depth).filter((d): d is number => d !== undefined);
+    return ds.length ? Math.min(...ds) : null;
+  };
   const acc: Record<Color, number[]> = { w: [], b: [] };
   const loss: Record<Color, number[]> = { w: [], b: [] };
   const counts: Record<Color, Record<Classification, number>> = { w: emptyCounts(), b: emptyCounts() };
@@ -123,17 +170,19 @@ export function buildGameReview(plies: PlyRecord[], userColor: Color): GameRevie
     const winBefore = winPercent(r.evalBefore * s);
     const winAfter = winPercent(r.evalAfter * s);
     const a = moveAccuracy(winBefore, winAfter);
-    const drop = r.classification === 'Book' ? 0 : Math.max(0, winBefore - winAfter);
+    const drop = Math.max(0, winBefore - winAfter);
+    const counted = countedAt.get(i) === true;
     acc[p.color].push(a);
     loss[p.color].push(r.cpLoss);
-    drops[p.color].push(drop);
+    if (counted) drops[p.color].push(drop);
     counts[p.color][r.classification]++;
 
     const phase = gamePhase(new Chess(p.fenBefore));
     const ph = phaseBy[p.color].get(phase) ?? { acc: [], loss: [], drop: [], mistakes: 0 };
     ph.acc.push(a);
     ph.loss.push(r.cpLoss);
-    ph.drop.push(drop);
+    // Phase grades use the same counted moves as the rating (no book, forced or decided moves).
+    if (counted) ph.drop.push(drop);
     if (BAD.includes(r.classification)) ph.mistakes++;
     phaseBy[p.color].set(phase, ph);
 
@@ -169,7 +218,8 @@ export function buildGameReview(plies: PlyRecord[], userColor: Color): GameRevie
     counts: counts[c],
     accuracy: mean(acc[c]),
     acpl: mean(loss[c]),
-    rating: estimateRating(drops[c]),
+    rating: estimateRating(counting[c], { timeClass: ctx.timeClass, known: ctx.known?.[c] ?? null, depth: depthOf(c) }),
+    countedAvgDrop: mean(drops[c]),
     phases: phaseList(phaseBy[c]),
   });
   const phases = phaseList(phaseBy[userColor]);
@@ -181,6 +231,7 @@ export function buildGameReview(plies: PlyRecord[], userColor: Color): GameRevie
     phases,
     evals,
     summary: summarize(counts[userColor], moments, phases, moves[userColor]),
+    ratingRecalculated: !!ctx.analyzedAt && Date.parse(ctx.analyzedAt) < Date.parse(ESTIMATE_CONFIG.methodSince),
   };
 }
 

@@ -29,6 +29,10 @@ export interface MoveReview {
   model?: number;
   /** Drop in the mover's winning chance, percentage points (model 2). */
   winDrop?: number;
+  /** Best line minus second-best line (mover's POV, cp), null with one line; missing on older saves. */
+  gap?: number | null;
+  /** Engine depth of the analysis behind this review; missing on older saves. */
+  depth?: number;
   evalBefore: number;
   evalAfter: number;
   bestUci: string | null;

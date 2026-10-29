@@ -103,7 +103,7 @@ export async function analyzeGame(
 }
 
 /** PlyRecords with the cached analysis attached as reviews, so the existing review code can run on them. */
-export function withReviews(plies: PlyRecord[], a: Pick<GameAnalysis, 'moves'>): PlyRecord[] {
+export function withReviews(plies: PlyRecord[], a: Pick<GameAnalysis, 'moves'> & { depth?: number }): PlyRecord[] {
   return plies.map((p, i) => {
     const m = a.moves[i];
     if (!m) return p;
@@ -113,6 +113,8 @@ export function withReviews(plies: PlyRecord[], a: Pick<GameAnalysis, 'moves'>):
         classification: m.classification,
         cpLoss: m.cpLoss,
         winDrop: m.winDrop,
+        gap: m.gap,
+        depth: a.depth,
         model: 2,
         evalBefore: m.evalBefore,
         evalAfter: m.evalAfter,

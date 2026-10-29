@@ -1,7 +1,20 @@
 import { MATE_CP } from '../config/coach';
 
-/** Served from public/engine/ (copied there by scripts/copy-engine.mjs). */
-export const ENGINE_FILE = 'engine/stockfish-19-lite-single.js';
+/**
+ * Stockfish 19 builds served from public/engine/ (copied there by scripts/copy-engine.mjs).
+ * Both are single-threaded, so they need no SharedArrayBuffer or COOP/COEP headers
+ * (GitHub Pages can't send those). The full build has the big NNUE network: stronger at the
+ * same depth, but a 99 MB download and roughly twice as slow per search.
+ */
+export type EngineBuild = 'lite' | 'full';
+
+export const ENGINE_BUILDS: Record<EngineBuild, { file: string; label: string; sizeMb: number }> = {
+  lite: { file: 'engine/stockfish-19-lite-single.js', label: 'Lite', sizeMb: 1.8 },
+  full: { file: 'engine/stockfish-19-single.js', label: 'Full', sizeMb: 99 },
+};
+
+/** The default build (also what the bot always uses: its strength table was tuned on it). */
+export const ENGINE_FILE = ENGINE_BUILDS.lite.file;
 
 export interface PvLine {
   multipv: number;
@@ -98,14 +111,17 @@ export class Engine {
   private waiters: ((line: string) => boolean)[] = [];
   readonly options: EngineOption[] = [];
   name = '';
+  readonly build: EngineBuild;
 
-  constructor(baseUrl: string) {
-    this.worker = new Worker(baseUrl + ENGINE_FILE);
+  constructor(baseUrl: string, build: EngineBuild = 'lite') {
+    this.build = build;
+    const file = ENGINE_BUILDS[build].file;
+    this.worker = new Worker(baseUrl + file);
     this.worker.onmessage = (e: MessageEvent) => this.onLine(String(e.data));
     const failed = new Promise<never>((_, reject) => {
       this.worker.onerror = (e) => {
         e.preventDefault();
-        reject(new Error(`could not start Stockfish (${e.message || ENGINE_FILE + ' failed to load'})`));
+        reject(new Error(`could not start Stockfish (${e.message || file + ' failed to load'})`));
       };
     });
     this.ready = Promise.race([

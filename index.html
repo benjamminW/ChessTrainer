@@ -16,7 +16,16 @@
         <button type="button" role="tab" id="mode-review" class="mode-tab">Review</button>
         <button type="button" role="tab" id="mode-analysis" class="mode-tab">Best move</button>
       </div>
-      <span id="engine-status" class="engine-status" role="status">Loading engine…</span>
+      <div class="engine-box">
+        <label class="engine-pick" title="Stockfish build for analysis, reviews, hints and Best move. The bot opponent always uses Lite.">
+          <span class="muted small">Engine</span>
+          <select id="engine-build">
+            <option value="lite">Lite (1.8 MB)</option>
+            <option value="full">Full (99 MB, stronger)</option>
+          </select>
+        </label>
+        <span id="engine-status" class="engine-status" role="status">Loading engine…</span>
+      </div>
     </header>
 
     <main class="layout">

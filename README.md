@@ -8,7 +8,7 @@ Play Stockfish at a strength from 400 to 2500 Elo, and get a plain-English expla
 - **Hint button.** Available on any of your moves, including when reviewing an earlier position. Each press reveals more: first the idea ("look for a fork"), then the piece to move (circled), then the move itself (arrow, eval and line). Hints work even with the coach hidden. The number of hints used is shown and saved in the PGN.
 - **Tactics and strategy tips.** A Tips card lists what matters in the current position. Tactics include mate threats, pieces in danger, loose enemy pieces, pins, fork chances and back-rank weaknesses. Strategy covers development, castling, the center, king activity, passed pawns, open files, the bishop pair and pawn weaknesses. Click a tip to circle its squares on the board.
 - **Game review.** When a game ends you're offered three ways in: **Go through it move by move**, **Jump to key moments**, or **Just the summary**. The review screen (also used for imported Chess.com games) has:
-  - a summary card: accuracy for both players as big numbers, this app's **estimated game rating** for each side (with a range), a count of every move class with its icon, the opening and where you left book, phase grades, and the result;
+  - a summary card: accuracy for both players as big numbers, this app's **estimated game rating** range for each side (with the counted moves and depth), a count of every move class with its icon, the opening and where you left book, phase grades, and the result;
   - an eval graph (White above the middle line) with colored dots for brilliant, great, inaccurate, mistaken, missed and blundered moves, a marker that follows the board, M3-style mate labels on hover, and click-to-jump;
   - an icon badge and a colored square on every move, plus a **coach line under the board**: "3… Nf6 is a blunder. Best was g6." with the eval change and the coach's explanation;
   - **Retry** (try the position again; your new move is graded) and **Show best** (plays the engine's line) on your non-best moves;
@@ -57,13 +57,16 @@ The repo includes a workflow, `.github/workflows/deploy.yml`. It runs `npm ci` (
 
 ### How the Stockfish WASM file is served
 
-- The `stockfish` npm package (v19.0.1) ships several builds. This app uses **`stockfish-19-lite-single`**: about 1.8 MB, **single-threaded**.
-- The multi-threaded builds need `SharedArrayBuffer`, which requires `Cross-Origin-Opener-Policy` / `Cross-Origin-Embedder-Policy` headers. GitHub Pages can't send those headers. The single-threaded build needs neither.
-- `scripts/copy-engine.mjs` runs on `postinstall`. It copies `stockfish-19-lite-single.js` and `.wasm` into `public/engine/`, which is git-ignored. Vite then copies `public/` into `dist/engine/` as-is (no hashing), so the `.js` can find its `.wasm` sitting next to it.
-- The app starts the engine with `new Worker(import.meta.env.BASE_URL + 'engine/stockfish-19-lite-single.js')`, so it resolves correctly under any base path. Two workers run: one for the coach's analysis and one for the bot's search.
+- The `stockfish` npm package (v19.0.1, the newest Stockfish on npm) ships several builds. The app uses the two **single-threaded** ones:
+  - **Lite** (`stockfish-19-lite-single`, about 1.8 MB, small NNUE network): the default.
+  - **Full** (`stockfish-19-single`, about 99 MB, the full NNUE network): stronger at the same depth, roughly twice as slow per search. Pick it with the **Engine** menu at the top of the page. The browser only downloads it when you choose it (after a confirmation), then caches it. If it fails to load, the app switches back to Lite and says so.
+- The Engine setting applies to the coach's engine: move analysis, reviews, hints, puzzles' analysis board, Review mode and Best move. **The bot opponent always uses Lite**, because its strength table (`src/config/strength.ts`) was tuned on that build. Switching drops cached analyses in memory so positions are re-analyzed by the new build; Review mode's saved analyses are kept (use **Analyze deeper** to redo one).
+- The multi-threaded builds need `SharedArrayBuffer`, which requires `Cross-Origin-Opener-Policy` / `Cross-Origin-Embedder-Policy` headers. GitHub Pages can't send those headers. The single-threaded builds need neither.
+- `scripts/copy-engine.mjs` runs on `postinstall`. It copies both builds' `.js` and `.wasm` into `public/engine/`, which is git-ignored. Vite then copies `public/` into `dist/engine/` as-is (no hashing), so each `.js` can find its `.wasm` next to it. The 99 MB file is part of the deployed site but is never committed.
+- The app starts an engine with `new Worker(import.meta.env.BASE_URL + ENGINE_BUILDS[build].file)`, so it resolves correctly under any base path. Two workers run: one for the coach's analysis and one for the bot's search.
 - GitHub Pages serves `.wasm` as `application/wasm`, which is what the engine needs.
 
-If you upgrade the `stockfish` package, update the file name in `scripts/copy-engine.mjs` and `ENGINE_FILE` in `src/engine/uci.ts`.
+If you upgrade the `stockfish` package, update the file names in `scripts/copy-engine.mjs` and `ENGINE_BUILDS` in `src/engine/uci.ts` (a test checks they match the package).
 
 ## Review mode (Chess.com games)
 
@@ -233,10 +236,47 @@ All thresholds are in `MOVE_CLASS` in `src/config/coach.ts`. Average centipawn l
 These are **this app's own estimates**. They will not match Chess.com's accuracy or game rating, which are proprietary; the review says so next to the numbers.
 
 - **Accuracy** per move is `103.1668 × e^(−0.04354 × drop) − 3.1669`, clamped to 0–100 (Lichess's formula), and a side's game accuracy is the plain average over its moves (Lichess also weights by volatility; this app doesn't).
-- **Estimated game rating** comes from the side's average drop per move (Book moves count as 0), mapped through this table with linear interpolation: 0.5 → 2800, 1 → 2500, 2 → 2150, 3 → 1900, 4 → 1700, 5 → 1550, 7 → 1300, 10 → 1050, 14 → 800, 20 → 550, 30 → 300. It's shown as a range: ±150 at 40 moves, widening as √(40 / moves) on shorter games, and flagged "short game: very rough" under 15 moves. It's a rough performance guide, not a rating.
-- **Phase grades** use the average drop per move in each phase: ≤ 2 Excellent, ≤ 4 Good, ≤ 7 Inaccurate, otherwise Poor. Phases: a position is an *endgame* when the pieces other than pawns and kings add up to 20 points or less (knight/bishop 3, rook 5, queen 9), or 26 or less with both queens off; otherwise it's the *opening* through move 10 and the *middlegame* after that. A phase that never happened is skipped.
+- **Estimated game rating:** see [Estimated game rating](#estimated-game-rating) below.
+- **Phase grades** use the average drop per *counted* move in each phase (the same moves the rating counts, below): ≤ 2 Excellent, ≤ 4 Good, ≤ 7 Inaccurate, otherwise Poor. Phases: a position is an *endgame* when the pieces other than pawns and kings add up to 20 points or less (knight/bishop 3, rook 5, queen 9), or 26 or less with both queens off; otherwise it's the *opening* through move 10 and the *middlegame* after that. A phase that never happened is skipped.
 
 - **Explanations.** These come from `src/coach/ruleBased.ts`, using facts computed in `src/coach/facts.ts` with chess.js: pieces left hanging, forks, captures and mates allowed by the opponent's best reply, missed captures, forks and mates, castling rights given up, and material over the next few moves of each line. For bot moves, it writes one line on the idea: develops, captures, attacks X, defends Y, threatens mate, and so on.
+
+### Estimated game rating
+
+The summary card shows a range like "about 1300 to 1700", with the number of counted moves and the analysis depth beside it. It is a **heuristic estimated from one game's move quality, not a real rating.** Code: `src/coach/ratingMoves.ts` (which moves count), `src/coach/estimate.ts` (the mapping, shrinkage, cap and range) and `scripts/build-rating-calibration.mjs` (the calibration).
+
+**Which moves count.** Each move's cost is the drop in the mover's winning chance (win% before with best play, minus win% after the move played). These moves are left out, because they say little about playing strength and would pull the average toward zero (that is, the estimate up):
+- **Book moves** (still in the opening dataset).
+- **Forced moves** (only one legal move).
+- **All-equal moves**: two legal moves, both within 2 win% of each other. The engine only reports its top 3 lines, so this can only be checked for positions with very few legal moves.
+- **The first recapture after an even trade** (e.g. taking back after BxN): it's the obvious move.
+- **Everything after the game is decided**: once the side to move is above 95% or below 5%, counting stops for both sides. In a won or lost position nearly every move barely changes win%. Mate scores map to 100% or 0% before any arithmetic, so they can't break the math.
+
+Under 15 counted moves the card shows "Not enough moves to estimate".
+
+**Calibration.** The table from average drop to rating is fitted on real games, not hand-written. The source is the [Lichess open database](https://database.lichess.org/) (CC0), which includes Lichess's own engine evaluation after every move for about 9% of games. The shipped table comes from the first 261 MB of January 2024: 808,139 games, 69,385 of them with evals, giving 106,126 player-games (bullet 21,965, blitz 51,855, rapid 32,062). The script counts moves with exactly the same rules as the app, keeps player-games with 15 or more counted moves, and takes the median average drop in each 100-point rating band. It forces the drop to fall as rating rises and stores one table per time class (bullet, blitz, rapid) plus a general table. A time class with fewer than 2,000 calibration games (daily, here) uses the general table. Not used: games against the coach. Its strength setting is a custom weakening of Stockfish, not a real rating.
+
+Things to know about the calibration:
+- **It's on the Lichess rating scale.** Lichess ratings run higher than Chess.com ratings for the same strength, especially at lower levels, and the app doesn't invent a conversion. The card's tooltip says "Lichess rating scale".
+- **Depth matters.** Lichess's evals come from deeper analysis than the app's quick reviews. Shallow analysis misses tactics, so mistakes look smaller and the estimate higher. Below depth 16 the card shows **low confidence**; the deeper analysis (depth 18) clears it.
+- **One game is noisy.** On the calibration data, a single 40-move game's estimate is typically about 500–700 points from the player's real rating (`sigma40` in the JSON). The displayed range is the middle 50% of that spread, so it's honest rather than narrow.
+
+**Pulling it toward reality.**
+- **Shrinkage:** when the game header has the player's rating (Chess.com games), the estimate is blended with it. The raw estimate's weight is n / (n + 25) for n counted moves, so a 15-move game leans mostly on the known rating and an 80-move game mostly on its own moves. Games against the coach have no known rating, so there is no shrinkage and the range is wider.
+- **Cap:** with a known rating and fewer than 30 counted moves, the estimate can't exceed the known rating by more than 200.
+- **Clamp:** results are limited to the app's Elo range, 400–2500 (`ELO_MIN`/`ELO_MAX` in `src/config/strength.ts`); a top of 2500 shows as "2500+".
+
+All of these numbers are in `ESTIMATE_CONFIG` and `RATING_COUNT_CONFIG`.
+
+**Older reviews.** The rating was never stored, so older reviews are recomputed with the new method when you open them; games analyzed before the change say "Recalculated with the updated method" on the card.
+
+**Rebuilding the table:**
+
+```bash
+node scripts/build-rating-calibration.mjs --month 2024-01 --bytes 261107712
+```
+
+It downloads that many bytes of the month's file into `data/` (gitignored), needs `zstd` on the PATH, and writes `src/coach/ratingCalibration.json` (commit that file).
 
 ### Hints and tips
 
@@ -291,7 +331,9 @@ src/
   ui/reviewPanel.ts    the Review side panel
   reviewScreen/        the shared game review screen (summary, coach line, retry, lines, key moments)
   coach/moveClass.ts   the 10-class classifier (Book/Miss/Great/Brilliant rules) and migration
-  coach/estimate.ts    estimated game rating and phase grades
+  coach/estimate.ts    estimated game rating (range, shrinkage, cap) and phase grades
+  coach/ratingMoves.ts which moves count toward the rating (shared with the calibration script)
+  coach/ratingCalibration.json  drop → rating tables, built by scripts/build-rating-calibration.mjs
   ui/classIcons.ts     the move-class icons and board badges
   game/session.ts      game state, takebacks, branching, result detection
   game/pgn.ts          PGN export with comments
@@ -320,6 +362,7 @@ scripts/build-openings.mjs   builds public/openings.json from the Lichess chess-
 - Games in Review mode come from the [Chess.com Published-Data API](https://www.chess.com/news/view/published-data-api).
 - Puzzles: the [Lichess puzzle database](https://database.lichess.org/#puzzles) (CC0).
 - Opening names: the [Lichess chess-openings](https://github.com/lichess-org/chess-openings) dataset (CC0).
+- Rating calibration: the [Lichess open database](https://database.lichess.org/) (CC0), games with engine evaluations.
 
 ## License
 

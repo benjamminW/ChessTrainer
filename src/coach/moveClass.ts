@@ -11,7 +11,7 @@ import { parseUci, uciOf } from '../game/session';
 import type { Classification, MoveReview, PlyRecord } from '../types';
 import { classify, isMateScore } from './classify';
 import { VALUE, isHanging } from './facts';
-import { winPercent } from './gameReview';
+import { winPercent } from './ratingMoves';
 
 export const CLASS_MODEL = 2;
 

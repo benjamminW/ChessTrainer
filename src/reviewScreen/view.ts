@@ -6,6 +6,8 @@ import { formatEval, formatLine, whiteShare } from '../coach/format';
 import { label as plyLabel } from '../coach/gameReview';
 import { describeIdea } from '../coach/ruleBased';
 import { CLASS_ORDER } from '../coach/classes';
+import { ESTIMATE_CONFIG, type RatingEstimate } from '../coach/estimate';
+import type { ExcludeReason } from '../coach/ratingMoves';
 import type { Classification, PlyRecord } from '../types';
 import { CLASS_COLOR, classIcon } from '../ui/classIcons';
 import { h } from '../ui/panel';
@@ -59,15 +61,14 @@ function summaryCard(s: ReviewScreen): HTMLElement {
     return h('div', { class: 'rs-player' },
       h('div', { class: 'rs-player-name' }, h('span', { class: `rv-color ${c}` }), who, name(c).rating ? h('span', { class: 'muted small' }, ` ${name(c).rating}`) : null),
       h('div', { class: 'rs-acc' }, progress ? '…' : pct(st.accuracy), h('span', { class: 'rs-acc-label' }, 'accuracy')),
-      h('div', { class: 'rs-est', title: "This app's estimate from how much winning chance each move gave away. Not a real rating." },
-        progress || !est ? h('span', { class: 'muted' }, 'Game rating: …')
-          : [`Game rating ≈ ${est.rating}`, h('span', { class: 'muted small' }, ` (${est.low}–${est.high}${est.short ? ', short game: very rough' : ''})`)]
-            .reduce<HTMLElement>((el, x) => (el.append(x), el), h('span', {}))),
+      ratingBlock(progress || !est ? null : est),
     );
   };
   body.append(h('div', { class: 'rs-players' }, player(me, 'You'), player(opp, me === 'w' ? meta.black.name : meta.white.name)));
   body.append(h('p', { class: 'muted small rs-note' },
-    "Accuracy and game rating are this app's own estimates (formula in the README) and won't match other sites' numbers.",
+    'Game rating: estimated from this game\'s move quality. Not a real rating. ',
+    r.ratingRecalculated ? h('strong', {}, 'Recalculated with the updated method (earlier versions read too high). ') : null,
+    "Accuracy and game rating are this app's own estimates (method in the README) and won't match other sites' numbers.",
     meta.externalAccuracy ? ` ${meta.externalAccuracy.source}'s own figures: you ${meta.externalAccuracy.you}, opponent ${meta.externalAccuracy.opponent}.` : ''));
 
   // Class counts, two columns
@@ -257,6 +258,45 @@ export function renderCoachLine(el: HTMLElement, s: ReviewScreen): void {
     ));
   }
 }
+
+/** The estimated rating range, with the counted moves and depth behind it. */
+function ratingBlock(est: RatingEstimate | null): HTMLElement {
+  const el = h('div', { class: 'rs-est' });
+  if (!est) {
+    el.append(h('span', { class: 'muted' }, 'Game rating: …'));
+    return el;
+  }
+  const left = Object.values(est.excluded).reduce((a, b) => a + b, 0);
+  const why = Object.entries(est.excluded).filter(([, n]) => n).map(([k, n]) => `${n} ${EXCLUDE_NAMES[k as ExcludeReason]}`).join(', ');
+  el.title = [
+    "Estimated from how much winning chance each counted move gave away (Lichess rating scale). Not a real rating.",
+    left ? `Left out: ${why}.` : '',
+    est.shrunk ? 'Pulled toward the rating in the game header, more so in short games.' : '',
+    est.capped ? `Capped at ${ESTIMATE_CONFIG.capMargin} above the header rating (fewer than ${ESTIMATE_CONFIG.capUntilMoves} counted moves).` : '',
+    est.clamped ? `Limited to the app's range, ${ESTIMATE_CONFIG.floor}–${ESTIMATE_CONFIG.ceiling}.` : '',
+  ].filter(Boolean).join(' ');
+  const depth = est.depth === null ? 'depth unknown' : `depth ${est.depth}`;
+  const meta = `${est.counted} move${est.counted === 1 ? '' : 's'} counted · ${depth}`;
+  if (est.status === 'few') {
+    el.append(h('span', {}, 'Not enough moves to estimate'), h('span', { class: 'muted small rs-est-meta' }, ` ${meta}`));
+    return el;
+  }
+  const top = est.high >= ESTIMATE_CONFIG.ceiling ? `${est.high}+` : String(est.high);
+  el.append(
+    h('span', {}, `Game rating: about ${est.low} to ${top}`),
+    h('span', { class: 'muted small rs-est-meta' }, ` ${meta}`),
+  );
+  if (est.lowConfidence) el.append(h('span', { class: 'rs-lowconf', title: `Analysis below depth ${ESTIMATE_CONFIG.minDepth} misses tactics, so mistakes look smaller than they are. Use the deeper analysis to firm it up.` }, 'low confidence'));
+  return el;
+}
+
+const EXCLUDE_NAMES: Record<ExcludeReason, string> = {
+  book: 'book',
+  forced: 'forced',
+  allEqual: 'all-moves-equal',
+  recapture: 'recapture',
+  decided: 'after the game was decided',
+};
 
 // ---------------------------------------------------------------- navigation, move list, key moments, lines
 

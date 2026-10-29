@@ -5,7 +5,7 @@
  */
 import { Chess } from 'chess.js';
 import { BAD_CLASSES, GOOD_HIGHLIGHTS, isBad } from '../coach/classes';
-import { buildGameReview, winPercent, type GameReview } from '../coach/gameReview';
+import { buildGameReview, winPercent, type GameReview, type ReviewContext } from '../coach/gameReview';
 import { boardFacts, classifyMove, winDrop } from '../coach/moveClass';
 import type { OpeningInfo } from '../review/openings';
 import type { Analysis } from '../engine/uci';
@@ -25,6 +25,8 @@ export interface ReviewMeta {
   opening?: OpeningInfo | null;
   /** Another site's own accuracy figures, shown separately and labeled as theirs. */
   externalAccuracy?: { you: number; opponent: number; source: string } | null;
+  /** Time class, header ratings and analysis date for the rating estimate. */
+  rating?: ReviewContext;
 }
 
 export interface ReviewModel {
@@ -114,7 +116,7 @@ export class ReviewScreen {
     const revision = this.model.revision ?? 0;
     const c = this.cachedReview;
     if (c && c.plies === this.plies && c.reviewed === reviewed && c.revision === revision) return c.value;
-    const value = buildGameReview(this.plies, this.user);
+    const value = buildGameReview(this.plies, this.user, this.model.meta.rating);
     this.cachedReview = { plies: this.plies, reviewed, revision, value };
     return value;
   }

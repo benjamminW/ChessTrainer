@@ -20,7 +20,7 @@ import { bookPrefix, identifyOpening, loadBook, type OpeningBook } from './revie
 import { ReviewScreen, type ReviewModel } from './reviewScreen/controller';
 import { renderReviewScreen } from './reviewScreen/view';
 import { RuleBasedProvider } from './coach/ruleBased';
-import { Engine, SearchCancelled, type Analysis } from './engine/uci';
+import { ENGINE_BUILDS, Engine, SearchCancelled, type Analysis, type EngineBuild } from './engine/uci';
 import { loadGame, loadSettings, saveGame, saveSettings, type Settings } from './game/persistence';
 import { materialSummary } from './game/material';
 import { exportPgn } from './game/pgn';
@@ -98,16 +98,9 @@ class App {
     });
     const base = import.meta.env.BASE_URL;
     // Two workers: the coach analyses at fixed depth while the bot searches at its own strength.
-    this.coachEngine = new Engine(base);
+    // The bot always runs the lite build (its strength table was tuned on it).
     this.botEngine = new Engine(base);
-    this.coachEngine.init().then(
-      (opts) => {
-        const elo = opts.find((o) => o.name === 'UCI_Elo');
-        console.info(`[engine] ${this.coachEngine.name}; UCI_Elo range ${elo?.min}–${elo?.max} (unused, see config/strength.ts)`, opts);
-        $('engine-status').textContent = this.coachEngine.name || 'Engine ready';
-      },
-      (e) => this.fail(e),
-    );
+    this.coachEngine = this.startCoachEngine(this.settings.engine);
 
     this.puzzles = new PuzzleMode({
       board: this.board,
@@ -152,6 +145,51 @@ class App {
     else if (!saved) this.openNewGameDialog(true);
     if (saved) this.resume();
     if (saved?.plies.length) void this.tagBookMoves();
+  }
+
+  /** Starts the coach's engine worker; the full build falls back to lite if it can't load. */
+  startCoachEngine(build: EngineBuild): Engine {
+    const engine = new Engine(import.meta.env.BASE_URL, build);
+    const info = ENGINE_BUILDS[build];
+    $('engine-status').textContent = build === 'full' ? `Loading the full engine (${info.sizeMb} MB, first time only)…` : 'Loading engine…';
+    engine.init().then(
+      (opts) => {
+        if (engine !== this.coachEngine) return;
+        const elo = opts.find((o) => o.name === 'UCI_Elo');
+        console.info(`[engine] ${engine.name} (${build}); UCI_Elo range ${elo?.min}–${elo?.max} (unused, see config/strength.ts)`, opts);
+        this.engineError = null;
+        $('engine-status').textContent = engine.name || `Stockfish (${info.label})`;
+        this.render();
+      },
+      (e) => {
+        if (engine !== this.coachEngine) return;
+        if (build === 'full') {
+          console.error(e);
+          this.switchEngine('lite', `The full engine couldn't load (${e instanceof Error ? e.message : e}). Using Lite.`);
+        } else this.fail(e);
+      },
+    );
+    return engine;
+  }
+
+  /** Swaps the coach's engine build. Cached analyses are dropped so everything is re-analyzed by the new build. */
+  switchEngine(build: EngineBuild, notice?: string): void {
+    this.settings.engine = build;
+    saveSettings(this.settings);
+    $<HTMLSelectElement>('engine-build').value = build;
+    const old = this.coachEngine;
+    this.analyses.clear();
+    this.resolved.clear();
+    this.coachEngine = this.startCoachEngine(build);
+    old.terminate();
+    if (notice) $('engine-status').textContent = notice;
+    // Reviews cancelled by the old worker finish unwinding first, then run again on the new one.
+    setTimeout(() => {
+      this.reviewMissing();
+      if (this.settings.mode === 'play') this.analyze(this.session.fenAt(this.session.cursor)).catch(() => {});
+    }, 0);
+    if (this.settings.mode === 'analysis') this.bestMove.refresh();
+    this.render();
   }
 
   /** Opening dataset, loaded once (null if it can't be loaded). */
@@ -364,6 +402,8 @@ class App {
         date: new Date(s.state.startedAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }),
         timeControl: `Against the coach at ${s.state.elo}`,
         opening: this.book ? identifyOpening(this.book, s.plies) : null,
+        // No time class or known ratings: the coach's strength setting isn't a real rating.
+        rating: { timeClass: null, known: {}, analyzedAt: s.state.startedAt },
       },
       startFen: s.state.startFen,
       plies: s.plies,
@@ -813,6 +853,17 @@ class App {
     $('mode-review').addEventListener('click', () => this.setMode('review'));
     $('mode-analysis').addEventListener('click', () => this.setMode('analysis'));
     $('btn-hint').addEventListener('click', () => this.requestHint());
+    const build = $<HTMLSelectElement>('engine-build');
+    build.value = this.settings.engine;
+    build.addEventListener('change', async () => {
+      const next = build.value as EngineBuild;
+      if (next === this.settings.engine) return;
+      if (next === 'full' && !(await this.confirm(`The full engine is a one-time ${ENGINE_BUILDS.full.sizeMb} MB download (then cached by your browser). It analyzes more accurately but each search takes about twice as long. Use it?`, 'Download'))) {
+        build.value = this.settings.engine;
+        return;
+      }
+      this.switchEngine(next);
+    });
     const fill = (id: string, options: { id: string; name: string }[]) =>
       $<HTMLSelectElement>(id).replaceChildren(...options.map((o) => new Option(o.name, o.id)));
     fill('board-theme', BOARDS);

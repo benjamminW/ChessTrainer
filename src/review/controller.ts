@@ -363,7 +363,7 @@ export class ReviewMode {
   model(og: OpenGame): ReviewModel {
     const g = og.game;
     const moves = og.analysis?.moves ?? og.partial;
-    const plies = moves ? withReviews(toPlies(og.imported, og.userColor), { moves }) : toPlies(og.imported, og.userColor);
+    const plies = moves ? withReviews(toPlies(og.imported, og.userColor), { moves, depth: og.analysis?.depth }) : toPlies(og.imported, og.userColor);
     const job = this.queue.jobs.find((j) => j.url === g.url && (j.status === 'queued' || j.status === 'running'));
     const me = og.userColor === 'w' ? 'white' : 'black';
     const them = og.userColor === 'w' ? 'black' : 'white';
@@ -379,6 +379,11 @@ export class ReviewMode {
         url: g.url,
         opening: og.opening,
         externalAccuracy: g.accuracies ? { you: g.accuracies[me], opponent: g.accuracies[them], source: 'Chess.com' } : null,
+        rating: {
+          timeClass: (['bullet', 'blitz', 'rapid', 'daily'] as const).find((t) => t === g.time_class) ?? null,
+          known: { w: g.white.rating ?? null, b: g.black.rating ?? null },
+          analyzedAt: og.analysis?.analyzedAt ?? null,
+        },
       },
       startFen: og.imported.startFen,
       plies,

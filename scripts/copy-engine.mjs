@@ -5,10 +5,16 @@ import { copyFileSync, mkdirSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// The "lite single-threaded" build: ~1.8 MB, no SharedArrayBuffer, so it needs
-// no COOP/COEP headers and works on GitHub Pages. Keep in sync with
-// ENGINE_FILE in src/engine/uci.ts.
-const FILES = ['stockfish-19-lite-single.js', 'stockfish-19-lite-single.wasm'];
+// The single-threaded builds need no SharedArrayBuffer, so they need no COOP/COEP
+// headers and work on GitHub Pages. "lite" (~1.8 MB) is the default; "full" (~99 MB,
+// big NNUE network) is only downloaded by browsers that pick it in the Engine setting.
+// Keep in sync with ENGINE_BUILDS in src/engine/uci.ts.
+const FILES = [
+  'stockfish-19-lite-single.js',
+  'stockfish-19-lite-single.wasm',
+  'stockfish-19-single.js',
+  'stockfish-19-single.wasm',
+];
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const src = join(root, 'node_modules', 'stockfish', 'bin');

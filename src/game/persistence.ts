@@ -17,6 +17,8 @@ export interface Settings {
   boardTheme: string;
   /** An id from PIECE_SETS in src/themes/catalog.ts. */
   pieceSet: string;
+  /** Stockfish build for the coach's analysis ('full' is a 99 MB download). The bot always uses lite. */
+  engine: 'lite' | 'full';
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -27,6 +29,7 @@ export const DEFAULT_SETTINGS: Settings = {
   mode: 'play',
   boardTheme: 'brown',
   pieceSet: 'classic',
+  engine: 'lite',
 };
 
 // localStorage can throw (private mode, blocked storage); the app works without it.
@@ -61,6 +64,7 @@ export function loadSettings(): Settings {
   // Fall back if a saved theme no longer exists.
   if (!BOARDS.some((b) => b.id === s.boardTheme)) s.boardTheme = DEFAULT_SETTINGS.boardTheme;
   if (!PIECE_SETS.some((p) => p.id === s.pieceSet)) s.pieceSet = DEFAULT_SETTINGS.pieceSet;
+  if (s.engine !== 'full') s.engine = 'lite';
   return s;
 }
 

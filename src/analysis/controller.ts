@@ -212,6 +212,14 @@ export class BestMoveMode {
     return this.pending.has(this.key(this.fen()));
   }
 
+  /** Forgets all results (e.g. after switching engine builds) and searches the shown position again. */
+  refresh(): void {
+    this.results.clear();
+    this.pending.clear();
+    this.request();
+    this.deps.requestRender();
+  }
+
   /** Searches the shown position (only that one: older searches are cancelled). */
   request(): void {
     if (this.edit) return;

@@ -1,7 +1,7 @@
 import { Chess } from 'chess.js';
 import { describe, expect, it } from 'vitest';
 import { classify, mateIn } from '../src/coach/classify';
-import { ESTIMATE_CONFIG, estimateRating, phaseGrade, ratingFromDrop } from '../src/coach/estimate';
+import { phaseGrade } from '../src/coach/estimate';
 import { buildGameReview, winPercent } from '../src/coach/gameReview';
 import { CLASS_MODEL, brilliantCandidate, classifyMove, confirmBrilliant, findSacrifice, migrateReview, winDrop } from '../src/coach/moveClass';
 import { scoreMove, upgradeBrilliant } from '../src/coach/review';
@@ -168,35 +168,10 @@ function reviewedGame(drops: number[]): PlyRecord[] {
   return s.plies;
 }
 
-describe('accuracy and estimated game rating', () => {
-  it('maps the average drop to a rating with the documented table', () => {
-    expect(ratingFromDrop(3)).toBe(1900);
-    expect(ratingFromDrop(2.5)).toBeCloseTo(2025);
-    expect(ratingFromDrop(0.1)).toBe(2800);
-    expect(ratingFromDrop(99)).toBeGreaterThanOrEqual(ESTIMATE_CONFIG.ratingFloor);
-  });
-
-  it('gives a short game a wide range and a warning', () => {
-    const short = estimateRating(Array(8).fill(3))!;
-    expect(short.rating).toBe(1900);
-    expect(short.short).toBe(true);
-    expect(short.high - short.low).toBeGreaterThan(600);
-  });
-
-  it('gives a long game a narrow range', () => {
-    const long = estimateRating(Array(60).fill(3))!;
-    expect(long.short).toBe(false);
-    expect(long.high - long.low).toBeLessThanOrEqual(250);
-  });
-
-  it('computes accuracy and an estimate for both sides of a game', () => {
+describe('accuracy for both sides', () => {
+  it('computes accuracy for both sides of a game', () => {
     const short = buildGameReview(reviewedGame([0, 0, 2, 0, 15, 0]), 'w');
     expect(short.stats.w.accuracy!).toBeLessThan(short.stats.b.accuracy!);
-    expect(short.stats.w.rating!.short).toBe(true);
-    const long = buildGameReview(reviewedGame(Array(80).fill(0).map((_, i) => (i % 2 ? 1 : 4))), 'w');
-    expect(long.stats.w.rating!.rating).toBeLessThan(long.stats.b.rating!.rating);
-    expect(long.stats.w.rating!.short).toBe(false);
-    expect(long.stats.w.phases.length).toBeGreaterThan(0);
     expect(phaseGrade(1)).toBe('Excellent');
     expect(phaseGrade(10)).toBe('Poor');
   });

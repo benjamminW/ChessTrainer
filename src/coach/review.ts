@@ -153,6 +153,8 @@ export async function reviewPly(
       explanation,
       model: numbers.model,
       winDrop: numbers.winDrop,
+      gap: numbers.secondCp === null ? null : numbers.bestCp - numbers.secondCp,
+      depth: before.depth,
     },
   };
 }
