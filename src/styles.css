@@ -425,6 +425,32 @@ h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color
 .panel-stack[hidden] { display: none; }
 body.mode-puzzles .player-bar,
 body.mode-puzzles .nav { visibility: hidden; }
+body.mode-analysis .nav { visibility: visible; }
+
+/* best move */
+.analysis-card h3 { margin: 14px 0 6px; font-size: 0.85rem; font-weight: 600; }
+.bm-body { min-height: 120px; }
+.bm-thinking { color: var(--muted); }
+.bm-best { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin: 6px 0; padding: 10px 12px; border-radius: 8px; background: var(--hover); border-left: 4px solid var(--best); }
+.bm-label { font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.bm-move { font-size: 1.6rem; font-weight: 700; line-height: 1; }
+.bm-eval { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
+.bm-idea { margin: 6px 0; }
+.bm-lines { margin: 4px 0; padding-left: 0; list-style: none; }
+.bm-options { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); align-items: center; }
+.bm-options .toggle { margin-top: 0; }
+.bm-section { margin-top: 12px; padding-top: 4px; border-top: 1px solid var(--border); }
+.bm-moves { max-height: 180px; margin-bottom: 6px; }
+.bm-paste { width: 100%; box-sizing: border-box; margin-top: 10px; font: inherit; font-size: 0.85rem; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); resize: vertical; }
+.bm-fen { word-break: break-all; margin-top: 8px; }
+.bm-fen code { font-size: 0.78rem; }
+.bm-palette { display: flex; gap: 4px; flex-wrap: wrap; margin: 4px 0; }
+.bm-tool { width: 40px; height: 40px; padding: 3px; font-size: 1.2rem; line-height: 1; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); cursor: pointer; }
+.bm-tool .bm-piece { display: block; position: relative; width: 100%; height: 100%; }
+.bm-tool .bm-piece piece { position: absolute; inset: 0; width: 100%; height: 100%; transform: none; pointer-events: none; }
+.bm-tool:hover { background: var(--hover); }
+.bm-tool.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.bm-fieldset { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 10px; font-size: 0.9rem; }
 
 /* puzzles */
 .puzzle-card h3 { margin: 12px 0 6px; font-size: 0.85rem; font-weight: 600; }

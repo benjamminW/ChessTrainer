@@ -18,6 +18,7 @@ Play Stockfish at a strength from 400 to 2500 Elo, and get a plain-English expla
 - **Lessons.** Explanations of your weaker moves end with a short general tip matched to the error, such as a blunder check after hanging a piece.
 - **Hint-free play.** "Show coach and tips during play" can be switched off. Explanations, tips, the eval bar and arrows then appear only after the game ends. The Hint button still works when you ask for it.
 - **Review mode.** Enter a Chess.com username to import your public games, analyze them in the background, and get a review of each game plus patterns across games: accuracy, key moments with explanations, openings and where you left theory, clock use, recurring weaknesses with the numbers behind them. See [Review mode](#review-mode-chesscom-games).
+- **Best move calculator.** The **Best move** tab shows the engine's best move for any position, with its evaluation, the expected line, a one-line idea and two alternatives. Set the position up by hand, paste a FEN or PGN, or load the game from the Play tab. See [Best move](#best-move).
 - **Puzzle mode.** Switch between **Play** and **Puzzles** at the top. Puzzles come from the Lichess puzzle database and are served near your own puzzle rating (separate from the game strength setting), or from a band and theme you pick. Wrong moves are explained by the coach, with an arrow to the right move, and you can retry or see the solution. Failed puzzles come back in **Review mistakes**. See [Puzzles](#puzzles).
 - **Takebacks and branching.** Unlimited takebacks, with a counter. Click any move to review it, then either play a different move or press **Continue from here** on any earlier position to branch (you're asked to confirm first).
 - **Piece counter.** Bars above and below the board show each player's captured pieces and the material lead (e.g. +3).
@@ -103,6 +104,20 @@ The username and filters are kept in `localStorage`; analyses (keyed by game URL
 
 - **Clear analysis cache** deletes the cached analyses and game lists.
 - **Forget this username and all cached analysis** also removes the username and filters.
+
+## Best move
+
+The **Best move** tab works out the best move for whoever is to move in any position.
+
+- **Getting a position in.** There are three ways:
+  - **Set up position.** Pick a piece and click squares to place it, or drag pieces around and off the board. Then choose the side to move and castling rights, and press **Done**. Castling rights are only offered when the king and rook are on their home squares. A position that can't happen (a missing king, a pawn on the back rank, the side that just moved in check) is refused with a reason.
+  - **Paste a FEN or PGN.** Any of these work: a full FEN, just the piece placement (`w`, no castling, assumed), a PGN with headers, or a plain move list like `1. e4 e5 2. Nf3`.
+  - **Use my game.** Loads the game from the Play tab, at the move you're looking at.
+- **What you see.** The best move in big type, the eval from White's side, the idea behind the move, the expected line, and the next two candidates. Arrows on the board show the best move in green and the alternatives in blue; you can turn them off.
+- **Exploring.** Move pieces for either side and the engine recalculates. Click a candidate (or **Play**) to make that move. ◀ ▶, the arrow keys, Home and End step through the line, and a different move from an earlier position replaces the rest of the line.
+- **Strength.** Fast (depth 12), Normal (depth 16) or Deep (depth 20), set in `src/config/analysis.ts`. Results are kept per position and depth, so stepping back is instant.
+
+The position, line and settings are saved in the browser. This tab uses the coach's engine worker with its own owner tag, so switching tabs cancels its search without touching Review-mode analysis.
 
 ## Puzzles
 
@@ -267,6 +282,9 @@ src/
   coach/gameReview.ts  post-game review: accuracy, key moments, phases
   puzzles/             puzzle mode: parser, move line, rating, progress store, selection, sources, controller
   ui/puzzlePanel.ts    the puzzle side panel
+  analysis/            Best move tab: FEN/PGN parsing, board setup checks, controller
+  config/analysis.ts   Best move depths and line count
+  ui/analysisPanel.ts  the Best move side panel
   review/              Review mode: Chess.com client, PGN import, IndexedDB cache, analysis queue,
                        per-game stats, openings, patterns, save-as-puzzle, controller
   config/review.ts     review presets and thresholds

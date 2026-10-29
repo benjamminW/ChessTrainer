@@ -37,6 +37,8 @@ import { PuzzleMode } from './puzzles/controller';
 import { ReviewMode } from './review/controller';
 import { renderReviewPanel } from './ui/reviewPanel';
 import { renderPuzzlePanel } from './ui/puzzlePanel';
+import { BestMoveMode } from './analysis/controller';
+import { renderAnalysisPanel } from './ui/analysisPanel';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -77,6 +79,7 @@ class App {
   private bookPromise: Promise<OpeningBook | null> | null = null;
   puzzles: PuzzleMode;
   reviewMode: ReviewMode;
+  bestMove: BestMoveMode;
 
   analyses = new Map<string, Promise<Analysis>>();
   resolved = new Map<string, Analysis>();
@@ -89,7 +92,10 @@ class App {
     this.session = new Session(saved ?? newGameState(this.pickColor(), this.settings.elo));
     this.orientation = this.session.state.userColor;
 
-    this.board = new Board($('board'), (from, to) => void this.onUserMove(from, to));
+    this.board = new Board($('board'), (from, to) => void this.onUserMove(from, to), {
+      onSelect: (sq) => this.bestMove.editClick(sq),
+      onChange: (placement) => this.bestMove.editChanged(placement),
+    });
     const base = import.meta.env.BASE_URL;
     // Two workers: the coach analyses at fixed depth while the bot searches at its own strength.
     this.coachEngine = new Engine(base);
@@ -126,11 +132,23 @@ class App {
       resolved: (fen) => this.resolved.get(fen),
     });
 
+    this.bestMove = new BestMoveMode({
+      analyze: (fen, opts) => this.coachEngine.analyze(fen, opts),
+      cancel: () => this.coachEngine.cancelAll('analysis'),
+      requestRender: () => this.render(),
+      promotionHost: $('board-host'),
+      playPosition: () => {
+        const st = this.session.state;
+        return { startFen: st.startFen, moves: this.session.plies.map((p) => p.uci), cursor: this.session.cursor, userColor: st.userColor };
+      },
+    });
+
     this.bindUi();
     this.applyAppearance();
     this.render();
     if (this.settings.mode === 'puzzles') this.puzzles.enter();
     else if (this.settings.mode === 'review') this.reviewMode.enter();
+    else if (this.settings.mode === 'analysis') this.bestMove.enter();
     else if (!saved) this.openNewGameDialog(true);
     if (saved) this.resume();
     if (saved?.plies.length) void this.tagBookMoves();
@@ -214,6 +232,7 @@ class App {
   async onUserMove(from: string, to: string): Promise<void> {
     if (this.settings.mode === 'puzzles') return this.puzzles.onMove(from, to);
     if (this.settings.mode === 'review') return this.reviewMode.onBoardMove(from, to, $('board-host'));
+    if (this.settings.mode === 'analysis') return this.bestMove.onBoardMove(from, to);
     if (this.screen) {
       const color = this.screen.currentFen().split(' ')[1] as Color;
       const promo = isPromotionMove(this.screen.currentFen(), from, to) ? await pickPromotion($('board-host'), color) : undefined;
@@ -536,6 +555,8 @@ class App {
     saveSettings(this.settings);
     if (mode === 'puzzles') this.puzzles.enter();
     if (mode === 'review') this.reviewMode.enter();
+    if (mode === 'analysis') this.bestMove.enter();
+    else this.coachEngine.cancelAll('analysis');
     this.render();
   }
 
@@ -561,6 +582,15 @@ class App {
     renderReviewPanel($('review-panel'), this.reviewMode, $('coach-line'), (f) => this.resolved.get(f), (f) => void this.analyze(f).catch(() => {}));
   }
 
+  renderAnalysis(): void {
+    const view = this.bestMove.boardView();
+    this.board.render(view);
+    renderEvalBar($('evalbar'), view.evalCp, view.orientation, !this.bestMove.edit);
+    renderAnalysisPanel($('analysis-panel'), this.bestMove);
+    $('coach-line').hidden = true;
+    $('continue-here').hidden = true;
+  }
+
   /** Puzzle mode draws the shared board, the eval bar (analysis only) and its own panel. */
   renderPuzzles(): void {
     const resolved = (fen: string) => this.resolved.get(fen);
@@ -573,12 +603,15 @@ class App {
   render(): void {
     const mode = this.settings.mode;
     document.body.classList.toggle('mode-puzzles', mode !== 'play');
+    document.body.classList.toggle('mode-analysis', mode === 'analysis');
     $('play-panel').hidden = mode !== 'play';
     $('puzzle-panel').hidden = mode !== 'puzzles';
     $('review-panel').hidden = mode !== 'review';
-    for (const m of ['play', 'puzzles', 'review']) $(`mode-${m}`).setAttribute('aria-selected', String(mode === m));
+    $('analysis-panel').hidden = mode !== 'analysis';
+    for (const m of ['play', 'puzzles', 'review', 'analysis']) $(`mode-${m}`).setAttribute('aria-selected', String(mode === m));
     if (mode === 'puzzles') return this.renderPuzzles();
     if (mode === 'review') return this.renderReview();
+    if (mode === 'analysis') return this.renderAnalysis();
 
     const s = this.session;
     const over = s.result();
@@ -778,6 +811,7 @@ class App {
     $('mode-play').addEventListener('click', () => this.setMode('play'));
     $('mode-puzzles').addEventListener('click', () => this.setMode('puzzles'));
     $('mode-review').addEventListener('click', () => this.setMode('review'));
+    $('mode-analysis').addEventListener('click', () => this.setMode('analysis'));
     $('btn-hint').addEventListener('click', () => this.requestHint());
     const fill = (id: string, options: { id: string; name: string }[]) =>
       $<HTMLSelectElement>(id).replaceChildren(...options.map((o) => new Option(o.name, o.id)));
@@ -813,6 +847,7 @@ class App {
     });
 
     const nav = (n: number) => {
+      if (this.settings.mode === 'analysis') return this.bestMove.goTo(n);
       // While the review is open, the board buttons step through it instead.
       if (this.screen) return this.screen.goTo(n);
       this.previewBetter = false;
@@ -820,13 +855,29 @@ class App {
       this.render();
     };
     $('nav-first').addEventListener('click', () => nav(0));
-    $('nav-prev').addEventListener('click', () => nav(this.session.cursor - 1));
-    $('nav-next').addEventListener('click', () => nav(this.session.cursor + 1));
-    $('nav-last').addEventListener('click', () => nav(this.session.plies.length));
+    const analysis = () => this.settings.mode === 'analysis';
+    $('nav-prev').addEventListener('click', () => nav((analysis() ? this.bestMove.cursor : this.session.cursor) - 1));
+    $('nav-next').addEventListener('click', () => nav((analysis() ? this.bestMove.cursor : this.session.cursor) + 1));
+    $('nav-last').addEventListener('click', () => nav(analysis() ? this.bestMove.moves.length : this.session.plies.length));
     document.addEventListener('keydown', (e) => {
       if (document.querySelector('dialog[open]') || (e.target as HTMLElement).closest('input, textarea, select')) return;
       if (this.settings.mode === 'puzzles') {
         if (e.key === 'h' && !e.metaKey && !e.ctrlKey && !e.altKey) this.puzzles.hint();
+        return;
+      }
+      if (this.settings.mode === 'analysis') {
+        const bm = this.bestMove;
+        if (bm.edit) return;
+        const keys: Record<string, () => void> = {
+          ArrowLeft: () => bm.goTo(bm.cursor - 1),
+          ArrowRight: () => bm.goTo(bm.cursor + 1),
+          Home: () => bm.goTo(0),
+          End: () => bm.goTo(bm.moves.length),
+        };
+        if (keys[e.key]) {
+          e.preventDefault();
+          keys[e.key]();
+        }
         return;
       }
       if (this.settings.mode === 'review') {
