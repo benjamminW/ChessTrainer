@@ -29,6 +29,8 @@ import { pickPromotion } from './ui/promotion';
 import { buildGameReview } from './coach/gameReview';
 import { renderReviewCard } from './ui/reviewCard';
 import { PuzzleMode } from './puzzles/controller';
+import { ReviewMode } from './review/controller';
+import { renderReviewPanel } from './ui/reviewPanel';
 import { renderPuzzlePanel } from './ui/puzzlePanel';
 import { BAD_CLASSES, nextMistake, renderWalkthrough } from './ui/walkthrough';
 
@@ -66,6 +68,7 @@ class App {
   /** Ply index being explained in the move-by-move review, or null when not in it. */
   walk: number | null = null;
   puzzles: PuzzleMode;
+  reviewMode: ReviewMode;
 
   analyses = new Map<string, Promise<Analysis>>();
   resolved = new Map<string, Analysis>();
@@ -99,10 +102,23 @@ class App {
       promotionHost: $('board-host'),
     });
 
+    this.reviewMode = new ReviewMode({
+      // The queue talks to the same coach engine directly (not this.analyze's in-memory cache),
+      // so analyzing many games doesn't fill memory.
+      analyze: (fen, opts) => this.coachEngine.analyze(fen, opts),
+      provider: this.provider,
+      baseUrl: base,
+      requestRender: () => this.render(),
+      playFrom: (fen, color) => void this.playFrom(fen, color),
+      savePuzzle: (p, from) => this.puzzles.addCustom(p, from),
+      hasPuzzle: (id) => this.puzzles.stats.custom.some((c) => c.puzzle[0] === id),
+    });
+
     this.bindUi();
     this.applyAppearance();
     this.render();
     if (this.settings.mode === 'puzzles') this.puzzles.enter();
+    else if (this.settings.mode === 'review') this.reviewMode.enter();
     else if (!saved) this.openNewGameDialog(true);
     if (saved) this.resume();
   }
@@ -157,6 +173,7 @@ class App {
 
   async onUserMove(from: string, to: string): Promise<void> {
     if (this.settings.mode === 'puzzles') return this.puzzles.onMove(from, to);
+    if (this.settings.mode === 'review') return this.render(); // the review board is view-only
     const s = this.session;
     let promotion: string | undefined;
     if (s.isPromotion(from, to)) {
@@ -418,7 +435,30 @@ class App {
     this.settings.mode = mode;
     saveSettings(this.settings);
     if (mode === 'puzzles') this.puzzles.enter();
+    if (mode === 'review') this.reviewMode.enter();
     this.render();
+  }
+
+  /** "Play from here" in Review mode: a new game against the coach from that position, you to move. */
+  async playFrom(fen: string, color: Color): Promise<void> {
+    const s = this.session;
+    if (s.plies.length && !s.isOver() && !(await this.confirm('Start a new game from this position? Your current game will be replaced.', 'Start'))) return;
+    this.invalidate();
+    this.undone = null;
+    this.hint = null;
+    this.session = new Session(newGameState(color, this.settings.elo, fen));
+    this.orientation = color;
+    this.persist();
+    this.setMode('play');
+    this.render();
+    this.resume();
+  }
+
+  renderReview(): void {
+    const view = this.reviewMode.boardView();
+    this.board.render(view);
+    renderEvalBar($('evalbar'), view.evalCp, view.orientation, view.showEval);
+    renderReviewPanel($('review-panel'), this.reviewMode);
   }
 
   /** Puzzle mode draws the shared board, the eval bar (analysis only) and its own panel. */
@@ -431,13 +471,14 @@ class App {
   }
 
   render(): void {
-    const puzzleMode = this.settings.mode === 'puzzles';
-    document.body.classList.toggle('mode-puzzles', puzzleMode);
-    $('play-panel').hidden = puzzleMode;
-    $('puzzle-panel').hidden = !puzzleMode;
-    $('mode-play').setAttribute('aria-selected', String(!puzzleMode));
-    $('mode-puzzles').setAttribute('aria-selected', String(puzzleMode));
-    if (puzzleMode) return this.renderPuzzles();
+    const mode = this.settings.mode;
+    document.body.classList.toggle('mode-puzzles', mode !== 'play');
+    $('play-panel').hidden = mode !== 'play';
+    $('puzzle-panel').hidden = mode !== 'puzzles';
+    $('review-panel').hidden = mode !== 'review';
+    for (const m of ['play', 'puzzles', 'review']) $(`mode-${m}`).setAttribute('aria-selected', String(mode === m));
+    if (mode === 'puzzles') return this.renderPuzzles();
+    if (mode === 'review') return this.renderReview();
 
     const s = this.session;
     const over = s.result();
@@ -676,6 +717,7 @@ class App {
     $('btn-new').addEventListener('click', () => this.openNewGameDialog(false));
     $('mode-play').addEventListener('click', () => this.setMode('play'));
     $('mode-puzzles').addEventListener('click', () => this.setMode('puzzles'));
+    $('mode-review').addEventListener('click', () => this.setMode('review'));
     $('btn-hint').addEventListener('click', () => this.requestHint());
     const fill = (id: string, options: { id: string; name: string }[]) =>
       $<HTMLSelectElement>(id).replaceChildren(...options.map((o) => new Option(o.name, o.id)));
@@ -729,6 +771,16 @@ class App {
       if (document.querySelector('dialog[open]') || (e.target as HTMLElement).closest('input, textarea, select')) return;
       if (this.settings.mode === 'puzzles') {
         if (e.key === 'h' && !e.metaKey && !e.ctrlKey && !e.altKey) this.puzzles.hint();
+        return;
+      }
+      if (this.settings.mode === 'review') {
+        const og = this.reviewMode.current;
+        if (this.reviewMode.view !== 'game' || !og) return;
+        const to = { ArrowLeft: og.step - 1, ArrowRight: og.step + 1, Home: 0, End: og.imported.moves.length }[e.key];
+        if (to !== undefined) {
+          e.preventDefault();
+          this.reviewMode.goTo(to);
+        }
         return;
       }
       if (this.walk !== null) {

@@ -1,6 +1,6 @@
 /** Puzzle progress in localStorage: rating, history, solved/recent IDs, the review queue and filters. */
 import { read, write } from '../game/persistence';
-import { toRecord } from './parse';
+import { fromRecord, toRecord } from './parse';
 import { RATING_CONFIG, ratingChange } from './rating';
 import type { Outcome, Puzzle, PuzzleRecord } from './types';
 
@@ -36,13 +36,24 @@ export interface ReviewItem {
   attempts: number;
 }
 
+/** A puzzle made from one of your own games (Review mode → "Save as puzzle"). Never rated. */
+export interface CustomPuzzle {
+  puzzle: PuzzleRecord;
+  from: { label: string; url: string };
+  solved: number;
+  failed: number;
+  addedAt: string;
+}
+
+export const isCustom = (id: string) => id.startsWith('cc-');
+
 export interface PuzzlePrefs {
   /** 'auto' = near your rating, or a band start like 1400. */
   band: 'auto' | number;
   /** 'all' or a Lichess theme tag. */
   theme: string;
   /** Which source serves the next puzzle (a timed rush could be added here). */
-  source: 'rated' | 'review';
+  source: 'rated' | 'review' | 'mine';
 }
 
 export interface PuzzleStats {
@@ -53,6 +64,8 @@ export interface PuzzleStats {
   solved: string[];
   recent: string[];
   review: ReviewItem[];
+  /** "My mistakes": puzzles saved from your own games. */
+  custom: CustomPuzzle[];
   prefs: PuzzlePrefs;
 }
 
@@ -64,6 +77,7 @@ export function newStats(): PuzzleStats {
     solved: [],
     recent: [],
     review: [],
+    custom: [],
     prefs: { band: 'auto', theme: 'all', source: 'rated' },
   };
 }
@@ -95,14 +109,21 @@ export function markSeen(s: PuzzleStats, id: string): void {
  * Review attempts are unrated: you've already seen the solution.
  */
 export function recordResult(s: PuzzleStats, p: Puzzle, outcome: Outcome, fromReview: boolean, now = new Date()): number {
-  const change = fromReview ? 0 : ratingChange(s.rating, p.rating, outcome, s.ratedPlayed);
-  if (!fromReview) {
+  // Puzzles from your own games have no rating: track solved/failed only.
+  const custom = s.custom.find((c) => c.puzzle[0] === p.id);
+  if (custom) {
+    if (outcome === 'failed') custom.failed++;
+    else custom.solved++;
+  }
+  const unrated = fromReview || isCustom(p.id);
+  const change = unrated ? 0 : ratingChange(s.rating, p.rating, outcome, s.ratedPlayed);
+  if (!unrated) {
     s.rating += change;
     s.ratedPlayed++;
   }
   s.history.push({
     id: p.id, result: outcome, change, rating: s.rating, puzzleRating: p.rating, date: now.toISOString(),
-    ...(fromReview ? { review: true } : {}),
+    ...(unrated ? { review: true } : {}),
   });
   if (s.history.length > STORE_CONFIG.historyLimit) s.history.splice(0, s.history.length - STORE_CONFIG.historyLimit);
   markSeen(s, p.id);
@@ -121,6 +142,23 @@ export function recordResult(s: PuzzleStats, p: Puzzle, outcome: Outcome, fromRe
     if (queued >= 0 && fromReview) s.review.splice(queued, 1);
   }
   return change;
+}
+
+/** Adds a puzzle from your own game to "My mistakes" and to the review queue (due now). False if already saved. */
+export function addCustomPuzzle(s: PuzzleStats, p: Puzzle, from: CustomPuzzle['from'], now = new Date()): boolean {
+  if (s.custom.some((c) => c.puzzle[0] === p.id)) return false;
+  s.custom.push({ puzzle: toRecord(p), from, solved: 0, failed: 0, addedAt: now.toISOString() });
+  s.review.push({ puzzle: toRecord(p), dueAt: s.ratedPlayed, attempts: 0 });
+  return true;
+}
+
+/** Next "My mistakes" puzzle: one not seen recently, fewest solves first. */
+export function nextCustom(s: PuzzleStats): Puzzle | null {
+  if (!s.custom.length) return null;
+  const recent = new Set(s.recent.slice(-Math.min(10, s.custom.length - 1)));
+  const pool = s.custom.filter((c) => !recent.has(c.puzzle[0]));
+  const pick = (pool.length ? pool : s.custom).slice().sort((a, b) => a.solved - b.solved || a.addedAt.localeCompare(b.addedAt))[0];
+  return fromRecord(pick.puzzle);
 }
 
 /** Review items in the order they should come back: due ones first, earliest due first. */

@@ -27,6 +27,8 @@ export interface Explanation {
   betterLineSan?: string[];
   /** A general lesson matching the error (e.g. "Blunder check: …"). */
   tip?: string;
+  /** Which errors were detected (e.g. 'hangs', 'allows-fork'), for counting patterns across games. */
+  kinds?: string[];
 }
 
 export interface PlyRecord {

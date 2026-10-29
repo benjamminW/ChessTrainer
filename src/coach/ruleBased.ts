@@ -278,6 +278,7 @@ export class RuleBasedProvider implements ExplanationProvider {
       pvSan,
       betterLineSan: lineToSan(ply.fenBefore, bestLineUci, n),
       tip: lessonFor(kinds),
+      kinds: [...kinds],
     };
   }
 }

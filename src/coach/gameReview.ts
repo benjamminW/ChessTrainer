@@ -51,6 +51,8 @@ export interface PhaseStats {
   phase: Phase;
   moves: number;
   accuracy: number | null;
+  /** Average centipawn loss in this phase. */
+  acpl: number | null;
   mistakes: number;
 }
 
@@ -83,7 +85,7 @@ export function buildGameReview(plies: PlyRecord[], userColor: Color): GameRevie
   const loss: Record<Color, number[]> = { w: [], b: [] };
   const counts: Record<Color, Record<Classification, number>> = { w: emptyCounts(), b: emptyCounts() };
   const moves: Record<Color, number> = { w: 0, b: 0 };
-  const phaseAcc = new Map<Phase, { acc: number[]; mistakes: number }>();
+  const phaseAcc = new Map<Phase, { acc: number[]; loss: number[]; mistakes: number }>();
   const moments: KeyMoment[] = [];
   let pending = 0;
 
@@ -104,8 +106,9 @@ export function buildGameReview(plies: PlyRecord[], userColor: Color): GameRevie
 
     if (p.color !== userColor) return;
     const phase = gamePhase(new Chess(p.fenBefore));
-    const ph = phaseAcc.get(phase) ?? { acc: [], mistakes: 0 };
+    const ph = phaseAcc.get(phase) ?? { acc: [], loss: [], mistakes: 0 };
     ph.acc.push(a);
+    ph.loss.push(r.cpLoss);
     if (BAD.includes(r.classification)) ph.mistakes++;
     phaseAcc.set(phase, ph);
 
@@ -142,7 +145,10 @@ export function buildGameReview(plies: PlyRecord[], userColor: Color): GameRevie
   });
   const phases: PhaseStats[] = (['opening', 'middlegame', 'endgame'] as Phase[])
     .filter((ph) => phaseAcc.has(ph))
-    .map((ph) => ({ phase: ph, moves: phaseAcc.get(ph)!.acc.length, accuracy: mean(phaseAcc.get(ph)!.acc), mistakes: phaseAcc.get(ph)!.mistakes }));
+    .map((ph) => {
+      const x = phaseAcc.get(ph)!;
+      return { phase: ph, moves: x.acc.length, accuracy: mean(x.acc), acpl: mean(x.loss), mistakes: x.mistakes };
+    });
 
   return {
     stats: { w: stats('w'), b: stats('b') },

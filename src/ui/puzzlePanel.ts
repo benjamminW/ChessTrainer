@@ -40,7 +40,7 @@ function filters(m: PuzzleMode): HTMLElement {
   const p = m.stats.prefs;
   const due = dueCount(m.stats);
   const queued = m.stats.review.length;
-  const tab = (id: 'rated' | 'review', label: string) =>
+  const tab = (id: 'rated' | 'review' | 'mine', label: string) =>
     h('button', {
       type: 'button',
       class: `btn small${p.source === id ? ' primary' : ''}`,
@@ -48,13 +48,13 @@ function filters(m: PuzzleMode): HTMLElement {
       onclick: () => p.source !== id && m.setPrefs({ source: id }),
     }, label);
 
-  const band = h('select', { 'aria-label': 'Puzzle rating', disabled: p.source === 'review' }) as HTMLSelectElement;
+  const band = h('select', { 'aria-label': 'Puzzle rating', disabled: p.source !== 'rated' }) as HTMLSelectElement;
   band.append(new Option(`Near my rating (${m.stats.rating})`, 'auto'));
   for (const b of m.index?.bands ?? []) band.append(new Option(`${b.band}–${b.band + 99}`, String(b.band)));
   band.value = String(p.band);
   band.onchange = () => m.setPrefs({ band: band.value === 'auto' ? 'auto' : Number(band.value) });
 
-  const theme = h('select', { 'aria-label': 'Puzzle theme', disabled: p.source === 'review' }) as HTMLSelectElement;
+  const theme = h('select', { 'aria-label': 'Puzzle theme', disabled: p.source !== 'rated' }) as HTMLSelectElement;
   theme.append(new Option('All themes', 'all'));
   for (const t of FILTER_THEMES) theme.append(new Option(themeName(t)[0].toUpperCase() + themeName(t).slice(1), t));
   theme.value = p.theme;
@@ -63,7 +63,10 @@ function filters(m: PuzzleMode): HTMLElement {
   return h(
     'div',
     { class: 'pz-filters' },
-    h('div', { class: 'pz-tabs' }, tab('rated', 'Rated puzzles'), tab('review', `Review mistakes${queued ? ` (${due ? `${due} due` : queued})` : ''}`)),
+    h('div', { class: 'pz-tabs' },
+      tab('rated', 'Rated puzzles'),
+      tab('review', `Review mistakes${queued ? ` (${due ? `${due} due` : queued})` : ''}`),
+      tab('mine', `My mistakes${m.stats.custom.length ? ` (${m.stats.custom.length})` : ''}`)),
     h('div', { class: 'appearance' }, h('label', {}, 'Rating', band), h('label', {}, 'Theme', theme)),
   );
 }
@@ -71,6 +74,15 @@ function filters(m: PuzzleMode): HTMLElement {
 function puzzleMeta(m: PuzzleMode): HTMLElement | null {
   const p = m.puzzle;
   if (!p) return null;
+  const custom = m.customInfo();
+  if (custom) {
+    return h(
+      'div',
+      { class: 'pz-meta' },
+      h('p', {}, h('span', { class: 'line-label' }, 'From'), h('a', { href: custom.from.url, target: '_blank', rel: 'noopener' }, custom.from.label)),
+      h('p', { class: 'small muted' }, `Unrated. Solved ${custom.solved}×, failed ${custom.failed}×.`),
+    );
+  }
   return h(
     'div',
     { class: 'pz-meta' },
@@ -83,7 +95,7 @@ function puzzleMeta(m: PuzzleMode): HTMLElement | null {
 function statusBlock(m: PuzzleMode): HTMLElement[] {
   const line = m.line;
   const solver = line ? colorName(line.solver) : '';
-  const unrated = !m.source.rated || m.fromReview;
+  const unrated = m.unrated;
   const out: HTMLElement[] = [];
   const st = (text: string, cls = '') => out.push(h('p', { class: `status ${cls}` }, text));
 
@@ -97,7 +109,8 @@ function statusBlock(m: PuzzleMode): HTMLElement[] {
     case 'solving':
       st(line && line.step > 1 ? 'Correct! Now find the next move.' : `Find the best move for ${solver}.`);
       if (m.assisted && !m.outcome) out.push(h('p', { class: 'muted small' }, "Hint used: solving it now won't change your rating."));
-      if (unrated && !m.outcome) out.push(h('p', { class: 'muted small' }, 'Review puzzle: unrated.'));
+      if (m.customInfo() && !m.outcome) out.push(h('p', { class: 'muted small' }, `From your game: ${m.customInfo()!.from.label}. Unrated.`));
+      else if (unrated && !m.outcome) out.push(h('p', { class: 'muted small' }, 'Review puzzle: unrated.'));
       break;
     case 'reply':
       st('Correct!', 'good');
@@ -125,14 +138,16 @@ function statusBlock(m: PuzzleMode): HTMLElement[] {
       if (o === 'solved') st('Solved!', 'good');
       else if (o === 'assisted') st('Solved with a hint.', 'good');
       else st('Puzzle failed.', 'bad');
-      if (unrated) out.push(h('p', { class: 'muted small' }, 'Unrated (review puzzle).'));
+      if (unrated) out.push(h('p', { class: 'muted small' }, m.customInfo() ? 'Unrated (from your game).' : 'Unrated (review puzzle).'));
       else out.push(h('p', { class: 'pz-result' }, `Rating ${signed(m.change)} → ${m.stats.rating}`));
       break;
     }
     case 'empty':
       st(m.stats.prefs.source === 'review'
         ? 'No mistakes to review. Puzzles you fail show up here.'
-        : 'No more puzzles match these filters. Try another theme or rating.');
+        : m.stats.prefs.source === 'mine'
+          ? 'No puzzles from your games yet. In Review mode, open a game and press "Save as puzzle" on a key moment.'
+          : 'No more puzzles match these filters. Try another theme or rating.');
       break;
     case 'error':
       st(`Couldn't load puzzles: ${m.error}`, 'bad');

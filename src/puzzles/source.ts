@@ -4,7 +4,7 @@
  */
 import { fromRecord } from './parse';
 import { bandsToTry, pickPuzzle } from './select';
-import { reviewQueue, type PuzzleStats } from './store';
+import { nextCustom, reviewQueue, type PuzzleStats } from './store';
 import type { Puzzle, PuzzleIndex, PuzzleRecord } from './types';
 
 export interface PuzzleSource {
@@ -66,6 +66,16 @@ export class RatedSource implements PuzzleSource {
       }
     }
     return null;
+  }
+}
+
+/** Puzzles saved from your own games in Review mode. Unrated. */
+export class MineSource implements PuzzleSource {
+  readonly rated = false;
+  constructor(private stats: () => PuzzleStats) {}
+
+  async next(): Promise<Puzzle | null> {
+    return nextCustom(this.stats());
   }
 }
 

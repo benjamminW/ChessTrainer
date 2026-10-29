@@ -12,8 +12,8 @@ import type { Classification, Color, Explanation, PlyRecord } from '../types';
 import type { Board, BoardView } from '../ui/board';
 import { pickPromotion } from '../ui/promotion';
 import { PuzzleLine } from './line';
-import { PuzzleLibrary, RatedSource, ReviewSource, type PuzzleSource } from './source';
-import { loadStats, markSeen, recordResult, saveStats, type PuzzlePrefs, type PuzzleStats } from './store';
+import { MineSource, PuzzleLibrary, RatedSource, ReviewSource, type PuzzleSource } from './source';
+import { addCustomPuzzle, isCustom, loadStats, markSeen, recordResult, saveStats, type CustomPuzzle, type PuzzlePrefs, type PuzzleStats } from './store';
 import type { Outcome, Puzzle, PuzzleIndex } from './types';
 
 export const PUZZLE_TIMING = {
@@ -103,6 +103,7 @@ export class PuzzleMode {
     this.sources = {
       rated: new RatedSource(this.lib, () => this.stats),
       review: new ReviewSource(() => this.stats),
+      mine: new MineSource(() => this.stats),
     };
   }
 
@@ -137,7 +138,7 @@ export class PuzzleMode {
         this.deps.requestRender();
         return;
       }
-      this.start(p, this.stats.prefs.source === 'review');
+      this.start(p, this.stats.prefs.source !== 'rated');
     } catch (e) {
       if (t === this.token) this.setError(e);
     }
@@ -219,10 +220,26 @@ export class PuzzleMode {
     }, PUZZLE_TIMING.replyDelayMs);
   }
 
+  /** Unrated: review puzzles, and puzzles from your own games. */
+  get unrated(): boolean {
+    return this.fromReview || !this.source.rated || (!!this.puzzle && isCustom(this.puzzle.id));
+  }
+
+  /** Where a "My mistakes" puzzle came from, if this is one. */
+  customInfo(): CustomPuzzle | undefined {
+    return this.puzzle ? this.stats.custom.find((c) => c.puzzle[0] === this.puzzle!.id) : undefined;
+  }
+
+  addCustom(p: Puzzle, from: CustomPuzzle['from']): boolean {
+    const added = addCustomPuzzle(this.stats, p, from);
+    if (added) saveStats(this.stats);
+    return added;
+  }
+
   private record(outcome: Outcome): void {
     if (this.outcome || !this.puzzle) return;
     this.outcome = outcome;
-    this.change = recordResult(this.stats, this.puzzle, outcome, !this.source.rated || this.fromReview);
+    this.change = recordResult(this.stats, this.puzzle, outcome, this.unrated);
     saveStats(this.stats);
   }
 

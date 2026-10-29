@@ -13,6 +13,7 @@ Play Stockfish at a strength from 400 to 2500 Elo, and get a plain-English expla
   - Turn off "Offer a game review when the game ends" to skip the question; the **Game review** button still opens it after any finished game.
 - **Lessons.** Explanations of your weaker moves end with a short general tip matched to the error, such as a blunder check after hanging a piece.
 - **Hint-free play.** "Show coach and tips during play" can be switched off. Explanations, tips, the eval bar and arrows then appear only after the game ends. The Hint button still works when you ask for it.
+- **Review mode.** Enter a Chess.com username to import your public games, analyze them in the background, and get a review of each game plus patterns across games: accuracy, key moments with explanations, openings and where you left theory, clock use, recurring weaknesses with the numbers behind them. See [Review mode](#review-mode-chesscom-games).
 - **Puzzle mode.** Switch between **Play** and **Puzzles** at the top. Puzzles come from the Lichess puzzle database and are served near your own puzzle rating (separate from the game strength setting), or from a band and theme you pick. Wrong moves are explained by the coach, with an arrow to the right move, and you can retry or see the solution. Failed puzzles come back in **Review mistakes**. See [Puzzles](#puzzles).
 - **Takebacks and branching.** Unlimited takebacks, with a counter. Click any move to review it, then either play a different move or press **Continue from here** on any earlier position to branch (you're asked to confirm first).
 - **Piece counter.** Bars above and below the board show each player's captured pieces and the material lead (e.g. +3).
@@ -58,6 +59,46 @@ The repo includes a workflow, `.github/workflows/deploy.yml`. It runs `npm ci` (
 - GitHub Pages serves `.wasm` as `application/wasm`, which is what the engine needs.
 
 If you upgrade the `stockfish` package, update the file name in `scripts/copy-engine.mjs` and `ENGINE_FILE` in `src/engine/uci.ts`.
+
+## Review mode (Chess.com games)
+
+Switch to **Review**, enter a Chess.com username, and the app loads that player's public games (standard chess only; Chess960 and other variants are skipped). Filter by time class, color, result and date, then **Analyze latest N** (default 10) or tick games and **Analyze selected**.
+
+Games come from the [Chess.com Published-Data API](https://www.chess.com/news/view/published-data-api): `/pub/player/{user}/games/archives` lists the monthly archives and each month returns the games with their PGN (including `%clk` clock comments), time control, ratings and results. No login or key is needed. Requests are sent strictly one at a time, newest month first; a `429` is retried after 2, 4 and 8 seconds (or the server's `Retry-After`), and an unknown username, rate limiting or a network failure each get a clear message.
+
+### Analysis presets
+
+Games are analyzed one at a time, most recent first, on the same Stockfish worker the rest of the app uses, so the page stays responsive. Progress is shown per game and overall, and the queue can be paused or cancelled.
+
+| Preset | Depth | Typical time per game |
+|---|---|---|
+| Quick (default) | 14 | ~30–60 s |
+| Deep | 18 | a few minutes |
+
+Depths and the other review settings (time-trouble threshold, minimum sample size, number of key moments) are in `src/config/review.ts`. Each move is classified with the same classifier and thresholds as in your games against the coach (Best / Good / Inaccuracy / Mistake / Blunder; there are no Brilliant or Great labels), and your inaccuracies, mistakes and blunders get the same explanations.
+
+### How accuracy is computed
+
+For each move, the evaluation before and after is turned into a winning chance with Lichess's formula, `win% = 50 + 50 × (2 / (1 + e^(−0.00368208 × cp)) − 1)`, and the move's accuracy is `103.1668 × e^(−0.04354 × (win% before − win% after)) − 3.1669`, clamped to 0–100. A game's accuracy is the plain average over that side's moves (Lichess additionally weights by volatility; this app doesn't). Average centipawn loss (ACPL) is the mean of the clamped centipawn losses.
+
+**This will not match Chess.com's accuracy.** Chess.com uses its own engine, depth and (unpublished) formula. When a game has Chess.com's own figures, the review shows them separately, labeled as Chess.com's.
+
+**Game phases** use the same rule as the rest of the app: a position is an *endgame* when the pieces other than pawns and kings add up to 20 points or less (knight/bishop 3, rook 5, queen 9), or 26 or less with both queens off; otherwise it's the *opening* through move 10 and the *middlegame* after that.
+
+**Openings** come from the [Lichess chess-openings](https://github.com/lichess-org/chess-openings) dataset (CC0), bundled as `public/openings.json` (regenerate with `node scripts/build-openings.mjs`). The review names the deepest named position the game reached, the move that left known theory, and the book moves available there.
+
+### What you get
+
+- **Per game:** players, ratings, result, time control, date and a link to the game; an eval graph you can click (the biggest swings are marked); accuracy, move-class counts and ACPL for both sides; the 3–5 moves that cost you the most winning chances, each with the better move (arrow on the board), the explanation and a tip; one or two "only move" finds; ACPL per phase; and, when the PGN has clocks, time trouble (moves under 30 s) and long thinks that still went wrong. Each key moment has **Play from here** (starts a game against the coach from that position) and **Save as puzzle**.
+- **Patterns** across all analyzed games that match the filters: record and accuracy by color and time class; your most-played openings with score and ACPL; ACPL by phase; mistake types as detected by the coach; blunder rate under 30 seconds versus with more time; and the top weaknesses, each stated with its count and the sample it's measured in, with example positions you can click. Anything with fewer than 5 instances is marked **too few to call**.
+- **Save as puzzle** turns a mistake into a puzzle in Puzzle mode's **My mistakes** set: it starts with the opponent's previous move (auto-played, like Lichess puzzles) and the solution is the engine's best line, up to 3 of your moves. These puzzles also enter the Review-mistakes queue, have no rating, and never affect your puzzle rating; only solved/failed counts are kept. Note that only the engine's line (or any checkmate) is accepted.
+
+### Storage, privacy and clearing the cache
+
+The username and filters are kept in `localStorage`; analyses (keyed by game URL) and finished months' game lists are cached in IndexedDB (`chess-coach-review`). A cached game is never analyzed again unless you choose a deeper preset. Nothing leaves your browser except requests to Chess.com.
+
+- **Clear analysis cache** deletes the cached analyses and game lists.
+- **Forget this username and all cached analysis** also removes the username and filters.
 
 ## Puzzles
 
@@ -192,6 +233,10 @@ src/
   ui/walkthrough.ts    the move-by-move review
   puzzles/             puzzle mode: parser, move line, rating, progress store, selection, sources, controller
   ui/puzzlePanel.ts    the puzzle side panel
+  review/              Review mode: Chess.com client, PGN import, IndexedDB cache, analysis queue,
+                       per-game stats, openings, patterns, save-as-puzzle, controller
+  config/review.ts     review presets and thresholds
+  ui/reviewPanel.ts    the Review side panel
   game/session.ts      game state, takebacks, branching, result detection
   game/pgn.ts          PGN export with comments
   game/persistence.ts  localStorage
@@ -204,6 +249,7 @@ tests/                 Vitest unit tests
 scripts/copy-engine.mjs      copies Stockfish into public/engine (postinstall)
 scripts/generate-themes.mjs  regenerates the custom board and piece SVGs
 scripts/build-puzzles.mjs    builds public/puzzles/ from the Lichess puzzle database
+scripts/build-openings.mjs   builds public/openings.json from the Lichess chess-openings dataset
 ```
 
 ## Libraries
@@ -212,6 +258,12 @@ scripts/build-puzzles.mjs    builds public/puzzles/ from the Lichess puzzle data
 - [chessground](https://github.com/lichess-org/chessground): the lichess board UI. It's framework-free and has built-in legal-move dots, last-move highlights and arrows (GPL-3.0).
 - [stockfish](https://github.com/nmrugg/stockfish.js): Stockfish 19 compiled to WASM (GPL-3.0).
 - Vite, TypeScript, Vitest (dev only).
+
+## Credits
+
+- Games in Review mode come from the [Chess.com Published-Data API](https://www.chess.com/news/view/published-data-api).
+- Puzzles: the [Lichess puzzle database](https://database.lichess.org/#puzzles) (CC0).
+- Opening names: the [Lichess chess-openings](https://github.com/lichess-org/chess-openings) dataset (CC0).
 
 ## License
 

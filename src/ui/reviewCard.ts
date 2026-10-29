@@ -38,7 +38,7 @@ function resultLine(r: GameResult, user: Color): string {
 }
 
 /** Eval graph: White's share over the game, with markers on the user's mistakes. */
-function evalGraph(v: ReviewCardView): SVGSVGElement {
+export function evalGraph(v: Pick<ReviewCardView, 'review' | 'cursor' | 'onSeek'> & { marks?: number[] }): SVGSVGElement {
   const NS = 'http://www.w3.org/2000/svg';
   const evals = v.review.evals;
   const n = Math.max(1, evals.length - 1);
@@ -68,6 +68,11 @@ function evalGraph(v: ReviewCardView): SVGSVGElement {
     el('line', { x1: 0, y1: H / 2, x2: W, y2: H / 2, class: 'g-mid' }),
   );
   if (v.cursor > 0) svg.append(el('line', { x1: x(v.cursor), y1: 0, x2: x(v.cursor), y2: H, class: 'g-cursor' }));
+  // Biggest swings, marked with a small triangle at the top.
+  for (const i of v.marks ?? []) {
+    const cx = x(i);
+    svg.append(el('path', { d: `M${cx - 4} 0 L${cx + 4} 0 L${cx} 6 Z`, class: 'g-swing' }));
+  }
   for (const m of v.review.moments) {
     const cp = evals[m.index + 1] ?? 0;
     svg.append(el('circle', { cx: x(m.index + 1), cy: y(cp), r: 3.2, class: `g-dot cls-${classSlug(m.classification)}` }));
