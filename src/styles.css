@@ -49,7 +49,7 @@ body {
 }
 
 h1, h2 { margin: 0; font-weight: 600; }
-h1 { font-size: 1.15rem; }
+h1 { font-size: 1.15rem; white-space: nowrap; }
 h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 8px; }
 
 .topbar {
@@ -122,6 +122,12 @@ h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color
 }
 .lead { color: var(--muted); font-weight: 600; font-variant-numeric: tabular-nums; }
 .board { width: 100%; aspect-ratio: 1 / 1; }
+/* Coordinates inside the edge squares (chessground's defaults hang the files off the right edge). */
+.cg-wrap coords { font-size: 10px; font-weight: 600; }
+.cg-wrap coords.files { left: 0; bottom: 1px; height: auto; }
+.cg-wrap coords.files coord { text-align: right; padding-right: 3px; }
+.cg-wrap coords.ranks { left: 3px; top: 2px; }
+.cg-wrap coords.ranks coord { transform: none; }
 
 .evalbar {
   position: relative;
@@ -220,7 +226,7 @@ h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
 .btn.primary:hover:not(:disabled) { filter: brightness(1.08); background: var(--accent); }
 .btn.icon { min-width: 44px; }
-.btn.small { font-size: 0.85rem; padding: 4px 10px; }
+.btn.small { font-size: 0.85rem; padding: 4px 10px; margin: 0; }
 .btn[hidden] { display: none; }
 .count {
   display: inline-block;
@@ -246,6 +252,19 @@ h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color
 }
 .toggle { display: flex; gap: 8px; align-items: center; margin-top: 12px; font-size: 0.9rem; cursor: pointer; }
 
+/* Play card: main actions as equal-width buttons, secondary ones smaller, settings folded away */
+.play-main { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 10px; }
+.play-main .btn { padding-left: 6px; padding-right: 6px; white-space: nowrap; }
+.play-more { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 6px; }
+.play-more .btn { white-space: nowrap; }
+.settings { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+.settings summary { cursor: pointer; font-size: 0.85rem; color: var(--muted); list-style: none; user-select: none; }
+.settings summary::-webkit-details-marker { display: none; }
+.settings summary::before { content: '▸'; display: inline-block; width: 1em; transition: transform 0.15s; }
+.settings[open] summary::before { transform: rotate(90deg); }
+.settings summary:hover { color: var(--text); }
+.settings .toggle:first-of-type { margin-top: 8px; }
+
 /* explanation */
 .explain-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
 .explain-move { font-weight: 600; }
@@ -270,6 +289,7 @@ h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color
 .line-label {
   display: inline-block;
   min-width: 82px;
+  margin-right: 6px;
   color: var(--muted);
   font-size: 0.75rem;
   text-transform: uppercase;
@@ -415,6 +435,7 @@ h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color
 .mode-tab {
   font: inherit;
   font-size: 0.9rem;
+  white-space: nowrap;
   padding: 4px 14px;
   border: 0;
   border-radius: 6px;
@@ -426,9 +447,10 @@ h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color
 .mode-tab:focus-visible { outline: 2px solid var(--accent); }
 .panel-stack { display: flex; flex-direction: column; gap: 14px; }
 .panel-stack[hidden] { display: none; }
+/* Modes other than Play don't use the player bars; only Best move uses the move buttons. */
 body.mode-puzzles .player-bar,
-body.mode-puzzles .nav { visibility: hidden; }
-body.mode-analysis .nav { visibility: visible; }
+body.mode-puzzles .nav { display: none; }
+body.mode-analysis .nav { display: flex; }
 
 /* best move */
 .analysis-card h3 { margin: 14px 0 6px; font-size: 0.85rem; font-weight: 600; }
@@ -477,7 +499,9 @@ body.mode-analysis .nav { visibility: visible; }
 .pz-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
 .pz-filters .appearance { margin-top: 6px; }
 .pz-filters select { max-width: 190px; }
-.pz-body { padding-top: 10px; min-height: 120px; }
+.pz-body { min-height: 90px; }
+.pz-settings { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+.pz-settings .pz-filters { border-bottom: 0; padding-bottom: 0; }
 .pz-body .status.good { color: var(--best); }
 .pz-body .status.bad { color: var(--blunder); }
 .pz-result { font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -663,7 +687,6 @@ cg-board square.hl-blunder.hl-from { background-color: rgba(207,58,47,0.2); }
 
 @media (max-width: 860px) {
   .rs-key-cols { grid-template-columns: 1fr; }
-  .rs-close { float: none; margin: 0 0 8px; }
 }
 
 /* move list */
@@ -707,11 +730,49 @@ input[type='range'] { width: 100%; accent-color: var(--accent); }
 
 /* ---------------------------------------------------------------- narrow */
 
+/* Narrow screens: title and engine menu on one line, the mode tabs as a full-width row under them. */
 @media (max-width: 860px) {
+  .topbar {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas: 'title engine' 'tabs tabs';
+    align-items: center;
+    row-gap: 8px;
+    padding: 10px 16px 8px;
+  }
+  .topbar h1 { grid-area: title; font-size: 1.05rem; white-space: nowrap; }
+  .engine-box { grid-area: engine; justify-content: flex-end; flex-wrap: nowrap; min-width: 0; }
+  .engine-label, .engine-status { display: none; }
+  .mode-switch { grid-area: tabs; margin: 0; overflow-x: auto; scrollbar-width: none; }
+  .mode-switch::-webkit-scrollbar { display: none; }
+  .mode-tab { flex: 1 0 auto; padding: 7px 10px; font-size: 0.85rem; text-align: center; }
+  body.listing .board-col { display: none; }
   .layout { grid-template-columns: minmax(0, 1fr); padding: 0 16px 20px; }
   .board-row { grid-template-columns: 22px minmax(0, 1fr); }
-  .topbar { padding: 12px 16px; }
   .moves { max-height: 220px; }
+}
+
+/* Phones: title and engine on one line, the mode tabs as a full-width row under them,
+   a slimmer eval bar, and buttons big enough to tap. */
+@media (max-width: 600px) {
+  body { font-size: 14px; }
+  .topbar { padding: 10px 12px 8px; }
+  .layout { padding: 0 10px 20px; gap: 12px; }
+  .board-row { grid-template-columns: 10px minmax(0, 1fr); column-gap: 6px; row-gap: 4px; }
+  .evalbar { width: 10px; border-radius: 3px; }
+  .evalbar-label { display: none; }
+  .player-bar { min-height: 22px; font-size: 0.85rem; }
+  .nav { margin-top: 8px; }
+  .nav .btn.icon { flex: 1; min-width: 0; max-width: 72px; }
+  .card { padding: 12px; }
+  .btn { min-height: 40px; }
+  .btn.small { min-height: 34px; }
+  .lr-steps { display: none; }
+  .lr-dots { gap: 8px; }
+  .lr-dot { width: 16px; height: 16px; }
+  dialog { padding: 16px; }
+  .dialog-actions { flex-wrap: wrap; }
+  .dialog-actions .btn { flex: 1 1 auto; }
 }
 
 /* practice games (Play from here) */
@@ -732,8 +793,6 @@ input[type='range'] { width: 100%; accent-color: var(--accent); }
 #pd-goal-why { display: block; margin-top: 4px; }
 
 /* learn */
-body.mode-learn .player-bar { visibility: hidden; }
-body.mode-learn .nav { visibility: hidden; }
 .learn-card h3 { margin: 14px 0 6px; font-size: 0.9rem; font-weight: 600; }
 .lr-resume { margin: 4px 0 10px; }
 .lr-section { padding-top: 6px; border-top: 1px solid var(--border); margin-top: 10px; }
@@ -762,6 +821,7 @@ body.mode-learn .nav { visibility: hidden; }
 .lr-judge.warn { color: var(--inaccuracy); }
 .lr-flag { margin: 8px 0; padding: 8px 10px; border-left: 3px solid var(--blunder); background: var(--hover); border-radius: 4px; }
 .lr-nav { margin-top: 12px; }
+.lr-theme { margin-top: 12px; }
 .rs-learn { margin: 8px 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--hover); }
 .lr-lines { width: 100%; margin-top: 10px; border-collapse: collapse; font-size: 0.82rem; }
 .lr-lines th, .lr-lines td { text-align: left; padding: 3px 4px; border-bottom: 1px solid var(--border); }

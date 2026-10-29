@@ -19,7 +19,7 @@
       </div>
       <div class="engine-box">
         <label class="engine-pick" title="Stockfish build for analysis, reviews, hints and Best move. The bot opponent always uses Lite.">
-          <span class="muted small">Engine</span>
+          <span class="muted small engine-label">Engine</span>
           <select id="engine-build">
             <option value="lite">Lite (1.8 MB)</option>
             <option value="full">Full (99 MB, stronger)</option>
@@ -63,34 +63,39 @@
         <section class="card" aria-label="Game">
           <p id="status" class="status" role="status"></p>
           <p id="game-info" class="muted small"></p>
-          <div class="controls">
+          <div class="controls play-main">
             <button type="button" class="btn hint-btn" id="btn-hint" title="Hint (H)">Hint</button>
-            <button type="button" class="btn primary" id="btn-new">New game</button>
             <button type="button" class="btn" id="btn-takeback">Take back <span id="takeback-count" class="count">0</span></button>
-            <button type="button" class="btn" id="btn-flip">Flip board</button>
-            <button type="button" class="btn" id="btn-resign">Resign</button>
-            <button type="button" class="btn" id="btn-pgn">Export PGN</button>
-            <button type="button" class="btn" id="btn-review" title="Available when the game is over">Game review</button>
+            <button type="button" class="btn primary" id="btn-new">New game</button>
+          </div>
+          <div class="controls play-more">
+            <button type="button" class="btn small" id="btn-flip">Flip board</button>
+            <button type="button" class="btn small" id="btn-resign">Resign</button>
+            <button type="button" class="btn small" id="btn-pgn">Export PGN</button>
+            <button type="button" class="btn small" id="btn-review" title="Available when the game is over">Game review</button>
           </div>
           <div id="hint" class="hint" aria-live="polite" hidden></div>
-          <label class="toggle">
-            <input type="checkbox" id="coach-toggle" />
-            <span>Show coach and tips during play</span>
-          </label>
-          <label class="toggle">
-            <input type="checkbox" id="review-toggle" />
-            <span>Offer a game review when the game ends</span>
-          </label>
-          <div class="appearance">
-            <label>
-              Board
-              <select id="board-theme"></select>
+          <details class="settings">
+            <summary>Settings</summary>
+            <label class="toggle">
+              <input type="checkbox" id="coach-toggle" />
+              <span>Show coach and tips during play</span>
             </label>
-            <label>
-              Pieces
-              <select id="piece-set"></select>
+            <label class="toggle">
+              <input type="checkbox" id="review-toggle" />
+              <span>Offer a game review when the game ends</span>
             </label>
-          </div>
+            <div class="appearance">
+              <label>
+                Board
+                <select id="board-theme"></select>
+              </label>
+              <label>
+                Pieces
+                <select id="piece-set"></select>
+              </label>
+            </div>
+          </details>
         </section>
 
         <section class="card review-card" id="review" aria-label="Game review" hidden></section>

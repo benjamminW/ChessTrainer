@@ -201,7 +201,8 @@ function analysisBlock(m: PuzzleMode, resolved: (fen: string) => Analysis | unde
 
 export function renderPuzzlePanel(el: HTMLElement, m: PuzzleMode, resolved: (fen: string) => Analysis | undefined): void {
   el.replaceChildren();
-  el.append(h('h2', {}, 'Puzzles'), ratingHeader(m), filters(m));
+  // The task comes first (on a phone it sits right under the board); rating and filters after it.
+  el.append(h('h2', {}, 'Puzzles'));
   const body = h('div', { class: 'pz-body', 'aria-live': 'polite' });
   if (m.analysisBoard) body.append(...analysisBlock(m, resolved));
   else {
@@ -213,6 +214,7 @@ export function renderPuzzlePanel(el: HTMLElement, m: PuzzleMode, resolved: (fen
   }
   el.append(
     body,
+    h('div', { class: 'pz-settings' }, ratingHeader(m), filters(m)),
     h('p', { class: 'pz-credit' },
       'Puzzles from the ',
       h('a', { href: 'https://database.lichess.org/#puzzles', target: '_blank', rel: 'noopener' }, 'Lichess puzzle database'),

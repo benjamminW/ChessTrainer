@@ -795,6 +795,9 @@ class App {
     document.body.classList.toggle('mode-puzzles', mode !== 'play');
     document.body.classList.toggle('mode-analysis', mode === 'analysis');
     document.body.classList.toggle('mode-learn', mode === 'learn');
+    // Browsing a list (lessons, games): phones hide the idle board so the list comes first.
+    const listing = (mode === 'learn' && this.learn.view !== 'lesson') || (mode === 'review' && this.reviewMode.view !== 'game');
+    document.body.classList.toggle('listing', listing);
     $('play-panel').hidden = mode !== 'play';
     $('puzzle-panel').hidden = mode !== 'puzzles';
     $('review-panel').hidden = mode !== 'review';

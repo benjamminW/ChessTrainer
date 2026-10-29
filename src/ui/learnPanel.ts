@@ -161,7 +161,7 @@ function lesson(m: LearnMode, openTheme?: (theme: string) => void): HTMLElement[
         : btn('Next ▶', () => m.next(), { primary: true, title: '→' })),
     complete ? h('p', { class: 'status good small' }, '✓ Lesson complete.') : h('span', {}),
     l.puzzleThemes?.length && openTheme
-      ? h('p', { class: 'small' }, h('button', { type: 'button', class: 'btn small', onclick: () => openTheme(l.puzzleThemes![0]) }, 'Practice this theme in Puzzles'))
+      ? h('p', { class: 'small lr-theme' }, h('button', { type: 'button', class: 'btn small', onclick: () => openTheme(l.puzzleThemes![0]) }, 'Practice this theme in Puzzles'))
       : h('span', {}),
   ];
 }
