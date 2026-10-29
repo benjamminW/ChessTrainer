@@ -1,7 +1,8 @@
 import { Chess, type Color, type Square } from 'chess.js';
 import { COACH_CONFIG } from '../config/coach';
 import type { Analysis } from '../engine/uci';
-import type { Explanation, PlyRecord } from '../types';
+import type { Classification, Explanation, PlyRecord } from '../types';
+import { isBad } from './classes';
 import { mateIn } from './classify';
 import {
   NAME, VALUE, castlingRights, forkTargets, hangingPieces, isCenterPawnMove, isDevelopingMove,
@@ -12,6 +13,15 @@ import { formatEval } from './format';
 import type { ExplanationProvider, MoveContext } from './provider';
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+const HEADLINES: Partial<Record<Classification, string>> = {
+  Brilliant: 'Brilliant move!',
+  Great: 'Great move!',
+  Best: 'Best move.',
+  Excellent: 'Excellent move.',
+  Good: 'Good move.',
+  Book: 'Book move.',
+};
 const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 
 /** "your" for the user's pieces, "the" for the bot's. */
@@ -246,7 +256,7 @@ export class RuleBasedProvider implements ExplanationProvider {
     const bestLineUci = before.lines[0]?.pv ?? [];
     const idea = describeIdea(ply.fenBefore, ply.uci, userColor, prev, after);
     const cls = numbers.classification;
-    const bad = cls === 'Inaccuracy' || cls === 'Mistake' || cls === 'Blunder';
+    const bad = isBad(cls);
 
     if (ply.by === 'bot') {
       const details: string[] = [];
@@ -258,9 +268,9 @@ export class RuleBasedProvider implements ExplanationProvider {
     }
 
     if (!bad) {
-      const headline = cls === 'Best' ? 'Best move.' : 'Good move.';
+      const headline = HEADLINES[cls] ?? 'Good move.';
       const details = idea ? [idea] : [];
-      if (cls === 'Good' && numbers.bestSan && !numbers.isEngineBest) {
+      if ((cls === 'Good' || cls === 'Excellent') && numbers.bestSan && !numbers.isEngineBest) {
         details.push(`The engine slightly preferred ${numbers.bestSan} (${formatEval(numbers.evalBefore)}).`);
       }
       return { headline, details, pvSan };

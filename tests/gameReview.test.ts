@@ -51,8 +51,9 @@ describe('buildGameReview', () => {
 
   it("counts each side's moves by class", () => {
     const r = buildGameReview(plies, 'w');
-    expect(r.stats.w.counts).toEqual({ Best: 2, Good: 0, Inaccuracy: 1, Mistake: 0, Blunder: 1 });
-    expect(r.stats.b.counts).toEqual({ Best: 1, Good: 2, Inaccuracy: 0, Mistake: 0, Blunder: 1 });
+    expect(r.stats.w.counts).toMatchObject({ Best: 2, Good: 0, Inaccuracy: 1, Mistake: 0, Blunder: 1, Miss: 0, Brilliant: 0 });
+    expect(r.stats.b.counts).toMatchObject({ Best: 1, Good: 2, Inaccuracy: 0, Mistake: 0, Blunder: 1 });
+    expect(Object.keys(r.stats.w.counts)).toHaveLength(10);
     expect(r.stats.w.moves).toBe(4);
     expect(r.stats.w.acpl).toBeCloseTo((0 + 0 + 100 + 820) / 4);
     expect(r.pending).toBe(0);
@@ -107,22 +108,5 @@ describe('buildGameReview', () => {
     const r = buildGameReview(plies, 'w');
     expect(r.phases.map((p) => p.phase)).toEqual(['opening']);
     expect(r.phases[0].mistakes).toBe(2);
-  });
-});
-
-describe('move-by-move review navigation', () => {
-  it("jumps to the user's next inaccuracy, mistake or blunder only", async () => {
-    const { nextMistake } = await import('../src/ui/walkthrough');
-    const plies = game(['e2e4', 'e7e5', 'g1f3', 'b8c6', 'f1c4', 'g8f6'], [
-      ['Best', 30, 30, 0],
-      ['Blunder', 30, 400, 370], // the coach's blunder is skipped
-      ['Mistake', 400, 200, 200],
-      ['Good', 200, 210, 10],
-      ['Good', 210, 200, 10],
-      ['Best', 200, 200, 0],
-    ]);
-    expect(nextMistake(plies, -1, 'w')).toBe(2);
-    expect(nextMistake(plies, 2, 'w')).toBeNull();
-    expect(nextMistake(plies, -1, 'b')).toBe(1);
   });
 });

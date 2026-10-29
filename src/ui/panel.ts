@@ -1,4 +1,6 @@
+import { CLASS_INFO, classSlug } from '../coach/classes';
 import { formatEval, formatLine, whiteShare } from '../coach/format';
+import { classIcon } from './classIcons';
 import type { HintStep } from '../coach/hints';
 import type { Tip } from '../coach/tips';
 import type { Classification, Color, PlyRecord } from '../types';
@@ -20,17 +22,14 @@ export function h<K extends keyof HTMLElementTagNameMap>(
   return el;
 }
 
-export const GLYPH: Record<Classification, string> = {
-  Best: '',
-  Good: '',
-  Inaccuracy: '?!',
-  Mistake: '?',
-  Blunder: '??',
-};
+export const GLYPH: Record<Classification, string> = Object.fromEntries(
+  Object.entries(CLASS_INFO).map(([k, v]) => [k, v.glyph]),
+) as Record<Classification, string>;
 
-export function classSlug(c: Classification): string {
-  return c.toLowerCase();
-}
+export { classSlug };
+
+/** Classes worth an icon in the in-game move list (the review screen shows every class). */
+const LIST_ICONS: Classification[] = ['Brilliant', 'Great', 'Inaccuracy', 'Mistake', 'Miss', 'Blunder'];
 
 // ---------------------------------------------------------------- move list
 
@@ -69,7 +68,7 @@ export function renderMoves(
         onclick: () => onSelect(i + 1),
       },
       p.san,
-      r && GLYPH[r.classification] ? h('span', { class: 'glyph' }, GLYPH[r.classification]) : null,
+      r && LIST_ICONS.includes(r.classification) ? classIcon(r.classification, 14) : null,
       p.hint ? h('span', { class: 'hint-mark', title: `Hint used (level ${p.hint})`, 'aria-label': 'hint used' }, '•') : null,
     );
     row!.append(cell);

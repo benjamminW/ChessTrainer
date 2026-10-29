@@ -3,6 +3,7 @@ import type { Color } from 'chess.js';
 import { buildGameReview, winPercent, type GameReview, type KeyMoment } from '../coach/gameReview';
 import { describeIdea } from '../coach/ruleBased';
 import { clampCp } from '../coach/classify';
+import { ERROR_CLASSES } from '../coach/classes';
 import { REVIEW_CONFIG } from '../config/review';
 import { toPlies, withReviews } from './analyzer';
 import type { ImportedGame } from './pgn';
@@ -39,7 +40,7 @@ export interface GameSummary {
   time: TimeUse | null;
 }
 
-const ERRORS = ['Mistake', 'Blunder'];
+const ERRORS = ERROR_CLASSES;
 
 export function summarizeGame(game: ImportedGame, a: GameAnalysis): GameSummary {
   const user = a.userColor;

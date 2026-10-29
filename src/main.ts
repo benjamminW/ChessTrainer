@@ -12,7 +12,13 @@ import { strategicTips, tacticalTips, type Tip } from './coach/tips';
 import { clampElo } from './config/strength';
 import { BOARDS, PIECE_SETS } from './themes/catalog';
 import type { ExplanationProvider } from './coach/provider';
-import { scoreMove, terminalScore } from './coach/review';
+import { reviewPly, terminalScore } from './coach/review';
+import { isBad } from './coach/classes';
+import { migrateReview } from './coach/moveClass';
+import { PRESETS } from './config/review';
+import { bookPrefix, identifyOpening, loadBook, type OpeningBook } from './review/openings';
+import { ReviewScreen, type ReviewModel } from './reviewScreen/controller';
+import { renderReviewScreen } from './reviewScreen/view';
 import { RuleBasedProvider } from './coach/ruleBased';
 import { Engine, SearchCancelled, type Analysis } from './engine/uci';
 import { loadGame, loadSettings, saveGame, saveSettings, type Settings } from './game/persistence';
@@ -20,19 +26,17 @@ import { materialSummary } from './game/material';
 import { exportPgn } from './game/pgn';
 import { Session, newGameState } from './game/session';
 import type { Color, PlyRecord } from './types';
+import { Chess } from 'chess.js';
 import { Board, type BoardView } from './ui/board';
 import {
   moveLabel, renderEvalBar, renderExplanation, renderHint, renderMoves, renderPlayerBar, renderTips,
   type ExplainView,
 } from './ui/panel';
 import { pickPromotion } from './ui/promotion';
-import { buildGameReview } from './coach/gameReview';
-import { renderReviewCard } from './ui/reviewCard';
 import { PuzzleMode } from './puzzles/controller';
 import { ReviewMode } from './review/controller';
 import { renderReviewPanel } from './ui/reviewPanel';
 import { renderPuzzlePanel } from './ui/puzzlePanel';
-import { BAD_CLASSES, nextMistake, renderWalkthrough } from './ui/walkthrough';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -63,10 +67,14 @@ class App {
   /** Tip whose squares are highlighted on the board. */
   focusedTip: { fen: string; tip: Tip } | null = null;
   tipCache = new Map<string, { tactics: Tip[]; strategy: Tip[] }>();
-  /** Whether the game review card is open (only shown once the game is over). */
-  reviewOpen = false;
-  /** Ply index being explained in the move-by-move review, or null when not in it. */
-  walk: number | null = null;
+  /** The post-game review screen, when open (only once the game is over). */
+  screen: ReviewScreen | null = null;
+  /** Bumped when reviews change (new move reviewed, deeper analysis), so the screen recomputes. */
+  reviewRevision = 0;
+  deepRunning: { done: number; total: number } | null = null;
+  /** Opening dataset (for Book moves), loaded on first use. */
+  book: OpeningBook | null = null;
+  private bookPromise: Promise<OpeningBook | null> | null = null;
   puzzles: PuzzleMode;
   reviewMode: ReviewMode;
 
@@ -76,6 +84,8 @@ class App {
 
   constructor() {
     const saved = loadGame();
+    // Reviews saved by the old centipawn classifier are upgraded to the current classes.
+    if (saved) saved.plies.forEach((p, i) => p.review && (p.review = migrateReview(p.review, p, saved.plies[i - 1] ?? null)));
     this.session = new Session(saved ?? newGameState(this.pickColor(), this.settings.elo));
     this.orientation = this.session.state.userColor;
 
@@ -105,13 +115,15 @@ class App {
     this.reviewMode = new ReviewMode({
       // The queue talks to the same coach engine directly (not this.analyze's in-memory cache),
       // so analyzing many games doesn't fill memory.
-      analyze: (fen, opts) => this.coachEngine.analyze(fen, opts),
+      analyze: (fen, opts) => this.coachEngine.analyze(fen, { ...opts, owner: 'review' }),
       provider: this.provider,
       baseUrl: base,
       requestRender: () => this.render(),
       playFrom: (fen, color) => void this.playFrom(fen, color),
       savePuzzle: (p, from) => this.puzzles.addCustom(p, from),
       hasPuzzle: (id) => this.puzzles.stats.custom.some((c) => c.puzzle[0] === id),
+      coachAnalyze: (fen) => this.analyze(fen),
+      resolved: (fen) => this.resolved.get(fen),
     });
 
     this.bindUi();
@@ -121,6 +133,36 @@ class App {
     else if (this.settings.mode === 'review') this.reviewMode.enter();
     else if (!saved) this.openNewGameDialog(true);
     if (saved) this.resume();
+    if (saved?.plies.length) void this.tagBookMoves();
+  }
+
+  /** Opening dataset, loaded once (null if it can't be loaded). */
+  getBook(): Promise<OpeningBook | null> {
+    this.bookPromise ??= loadBook(import.meta.env.BASE_URL).then(
+      (b) => (this.book = b),
+      () => null,
+    );
+    return this.bookPromise;
+  }
+
+  /** Marks the opening moves of a migrated game as Book (their reviews predate the Book class). */
+  async tagBookMoves(): Promise<void> {
+    const book = await this.getBook();
+    if (!book) return;
+    const plies = this.session.plies;
+    const n = bookPrefix(book, plies);
+    let changed = false;
+    plies.slice(0, n).forEach((p) => {
+      if (p.review && p.review.classification !== 'Book' && !isBad(p.review.classification)) {
+        p.review = { ...p.review, classification: 'Book' };
+        changed = true;
+      }
+    });
+    if (changed) {
+      this.reviewRevision++;
+      this.persist();
+      this.render();
+    }
   }
 
   // ------------------------------------------------------------ game flow
@@ -140,8 +182,7 @@ class App {
 
   startNewGame(): void {
     this.invalidate();
-    this.reviewOpen = false;
-    this.coachEngine.cancelAll();
+    this.coachEngine.cancelAll('play');
     this.analyses.clear();
     this.resolved.clear();
     this.session = new Session(newGameState(this.pickColor(), this.settings.elo));
@@ -164,8 +205,7 @@ class App {
 
   invalidate(): void {
     this.gen++;
-    this.reviewOpen = false; // a takeback or branch reopens the game, so the review closes
-    this.walk = null;
+    this.screen = null; // a takeback or branch reopens the game, so the review closes
     this.botEngine.cancelAll();
     this.botThinking = false;
     this.previewBetter = false;
@@ -173,7 +213,13 @@ class App {
 
   async onUserMove(from: string, to: string): Promise<void> {
     if (this.settings.mode === 'puzzles') return this.puzzles.onMove(from, to);
-    if (this.settings.mode === 'review') return this.render(); // the review board is view-only
+    if (this.settings.mode === 'review') return this.reviewMode.onBoardMove(from, to, $('board-host'));
+    if (this.screen) {
+      const color = this.screen.currentFen().split(' ')[1] as Color;
+      const promo = isPromotionMove(this.screen.currentFen(), from, to) ? await pickPromotion($('board-host'), color) : undefined;
+      if (promo === null) return this.render();
+      return this.screen.onBoardMove(from, to, promo);
+    }
     const s = this.session;
     let promotion: string | undefined;
     if (s.isPromotion(from, to)) {
@@ -266,59 +312,113 @@ class App {
     if (dlg.open) return;
     $('rp-result').textContent = this.statusText();
     $('rp-text').textContent =
-      'Want to go through the game move by move? The coach will step through every move and, ' +
-      'at each of your mistakes, show what you could have done better.';
+      'Want to review the game? Go through it move by move with the coach, jump straight to the key moments, ' +
+      'or just see the summary.';
     dlg.returnValue = '';
     dlg.showModal();
     await new Promise((resolve) => (dlg.onclose = resolve));
     if (!this.session.isOver()) return;
-    if (dlg.returnValue === 'walk') this.startWalkthrough();
-    else if (dlg.returnValue === 'summary') {
-      this.reviewOpen = true;
+    const how = dlg.returnValue;
+    if (how === 'walk' || how === 'summary' || how === 'key') this.openScreen(how);
+  }
+
+  // ------------------------------------------------------------ post-game review screen
+
+  /** The finished game as a review-screen model. */
+  playModel(): ReviewModel {
+    const s = this.session;
+    const r = s.result();
+    const coachName = `Coach (${s.state.elo})`;
+    const youWon = r && ((r.score === '1-0' && this.userColor === 'w') || (r.score === '0-1' && this.userColor === 'b'));
+    const resultText = !r ? 'Game in progress'
+      : r.reason === 'resignation' ? 'You resigned.'
+      : r.score === '1/2-1/2' ? `Draw by ${r.reason}.`
+      : `${youWon ? 'You won' : 'The coach won'} by ${r.reason}.`;
+    const pending = s.plies.filter((p) => !p.review).length;
+    const deep = this.deepRunning;
+    return {
+      meta: {
+        userColor: this.userColor,
+        white: { name: this.userColor === 'w' ? 'You' : coachName },
+        black: { name: this.userColor === 'b' ? 'You' : coachName },
+        resultText,
+        date: new Date(s.state.startedAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }),
+        timeControl: `Against the coach at ${s.state.elo}`,
+        opening: this.book ? identifyOpening(this.book, s.plies) : null,
+      },
+      startFen: s.state.startFen,
+      plies: s.plies,
+      progress: deep ?? (pending ? { done: s.plies.length - pending, total: s.plies.length } : null),
+      revision: this.reviewRevision,
+      deeper: { label: `Deeper analysis (depth ${PRESETS.deep.depth})`, running: !!deep, run: () => void this.deepReview() },
+    };
+  }
+
+  /** Opens the review: from move 1, at the summary, or at the first key moment. */
+  openScreen(how: 'walk' | 'summary' | 'key'): void {
+    if (!this.session.isOver()) return;
+    void this.getBook().then(() => this.render());
+    const screen = new ReviewScreen(this.playModel(), {
+      analyze: (fen) => this.analyze(fen),
+      resolved: (fen) => this.resolved.get(fen),
+      requestRender: () => this.render(),
+    });
+    if (how === 'walk') {
+      screen.summaryOpen = false;
+      screen.goTo(1);
+    } else if (how === 'key') {
+      screen.summaryOpen = false;
+      screen.jumpKey(1);
+    } else {
+      screen.summaryOpen = true;
+      screen.goTo(this.session.plies.length);
+    }
+    this.screen = screen;
+    this.render();
+    $('review').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  closeScreen(): void {
+    this.screen = null;
+    this.session.goTo(this.session.plies.length);
+    this.render();
+  }
+
+  /** Re-analyzes every move of the finished game at the Deep preset's depth and replaces the reviews. */
+  async deepReview(): Promise<void> {
+    if (this.deepRunning) return;
+    const g = this.gen;
+    const plies = this.session.plies;
+    const opts = { depth: PRESETS.deep.depth, multiPv: COACH_CONFIG.multiPv, owner: 'play' };
+    const analyze = (fen: string, o: { depth: number; multiPv: number; searchMoves?: string[] }) => this.coachEngine.analyze(fen, { ...o, owner: 'play' });
+    const fens = [this.session.state.startFen, ...plies.map((p) => p.fenAfter)];
+    this.deepRunning = { done: 0, total: fens.length };
+    this.render();
+    try {
+      const book = await this.getBook();
+      const inBook = book ? bookPrefix(book, plies) : 0;
+      const analyses: (Analysis | null)[] = [];
+      for (let i = 0; i < fens.length; i++) {
+        if (g !== this.gen) return;
+        analyses.push(i > 0 && terminalScore(fens[i]) !== null ? null : await this.coachEngine.analyze(fens[i], opts));
+        this.deepRunning = { done: i + 1, total: fens.length };
+        this.render();
+      }
+      for (let i = 0; i < plies.length; i++) {
+        if (g !== this.gen) return;
+        const { review } = await reviewPly(plies[i], plies[i - 1] ?? null, analyses[i]!, analyses[i + 1], {
+          userColor: this.userColor, inBook: i < inBook, provider: this.provider, analyze, owner: 'play',
+        });
+        plies[i].review = review;
+      }
+      this.reviewRevision++;
+      this.persist();
+    } catch (e) {
+      if (!(e instanceof SearchCancelled)) console.error('[coach] deeper analysis failed', e);
+    } finally {
+      if (g === this.gen) this.deepRunning = null;
       this.render();
     }
-  }
-
-  // ------------------------------------------------------------ move-by-move review
-
-  isUserMistake(i: number): boolean {
-    const p = this.session.plies[i];
-    return !!p && p.color === this.userColor && !!p.review && BAD_CLASSES.includes(p.review.classification);
-  }
-
-  startWalkthrough(): void {
-    if (!this.session.isOver() || this.session.plies.length === 0) return;
-    this.reviewOpen = false;
-    this.walkGo(0);
-    $('walkthrough').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }
-
-  /** Shows ply `i`: the position after it, or for your mistakes the position before it with the better move. */
-  walkGo(i: number): void {
-    const s = this.session;
-    this.walk = Math.max(0, Math.min(s.plies.length - 1, i));
-    s.goTo(this.walk + 1);
-    this.previewBetter = this.isUserMistake(this.walk);
-    this.render();
-  }
-
-  exitWalkthrough(): void {
-    this.walk = null;
-    this.previewBetter = false;
-    this.session.goTo(this.session.plies.length);
-    this.reviewOpen = true;
-    this.render();
-  }
-
-  /** Leave the review at the position before this move so the user can play it differently. */
-  walkTry(): void {
-    if (this.walk === null) return;
-    const i = this.walk;
-    this.walk = null;
-    this.reviewOpen = false;
-    this.previewBetter = false;
-    this.session.goTo(i);
-    this.render();
   }
 
   async continueFromHere(): Promise<void> {
@@ -337,7 +437,7 @@ class App {
   canHint(): boolean {
     const s = this.session;
     return (
-      this.walk === null && !this.previewBetter && s.turnAt() === this.userColor && !(s.atLatest && (s.isOver() || this.botThinking))
+      !this.screen && !this.previewBetter && s.turnAt() === this.userColor && !(s.atLatest && (s.isOver() || this.botThinking))
     );
   }
 
@@ -382,7 +482,7 @@ class App {
   analyze(fen: string): Promise<Analysis> {
     let p = this.analyses.get(fen);
     if (!p) {
-      p = this.coachEngine.analyze(fen, { depth: COACH_CONFIG.depth, multiPv: COACH_CONFIG.multiPv });
+      p = this.coachEngine.analyze(fen, { depth: COACH_CONFIG.depth, multiPv: COACH_CONFIG.multiPv, owner: 'play' });
       this.analyses.set(fen, p);
       p.then(
         (a) => {
@@ -408,17 +508,17 @@ class App {
       const prev = i > 0 ? plies[i - 1] : null;
       const before = await this.analyze(ply.fenBefore);
       const after = terminalScore(ply.fenAfter) === null ? await this.analyze(ply.fenAfter) : null;
-      const numbers = scoreMove(ply, before, after);
-      const explanation = await this.provider.explain({ ply, prev, userColor: this.userColor, before, after, numbers });
-      ply.review = {
-        classification: numbers.classification,
-        cpLoss: numbers.cpLoss,
-        evalBefore: numbers.evalBefore,
-        evalAfter: numbers.evalAfter,
-        bestUci: numbers.bestUci,
-        bestSan: numbers.bestSan,
-        explanation,
-      };
+      const book = await this.getBook();
+      const inBook = !!book && i >= 0 && bookPrefix(book, plies.slice(0, i + 1)) === i + 1;
+      const { review } = await reviewPly(ply, prev, before, after, {
+        userColor: this.userColor,
+        inBook,
+        provider: this.provider,
+        analyze: (fen, o) => this.coachEngine.analyze(fen, { ...o, owner: 'play' }),
+        owner: 'play',
+      });
+      ply.review = review;
+      this.reviewRevision++;
       if (this.session.plies.includes(ply)) this.persist();
       this.render();
     } catch (e) {
@@ -458,7 +558,7 @@ class App {
     const view = this.reviewMode.boardView();
     this.board.render(view);
     renderEvalBar($('evalbar'), view.evalCp, view.orientation, view.showEval);
-    renderReviewPanel($('review-panel'), this.reviewMode);
+    renderReviewPanel($('review-panel'), this.reviewMode, $('coach-line'), (f) => this.resolved.get(f), (f) => void this.analyze(f).catch(() => {}));
   }
 
   /** Puzzle mode draws the shared board, the eval bar (analysis only) and its own panel. */
@@ -482,6 +582,9 @@ class App {
 
     const s = this.session;
     const over = s.result();
+    if (!over) this.screen = null;
+    const screen = this.screen;
+    if (screen) screen.setModel(this.playModel());
     const coach = this.coachVisible;
     const viewed = s.cursor > 0 ? s.plies[s.cursor - 1] : null;
     const review = viewed?.review;
@@ -489,8 +592,7 @@ class App {
     const prevPly = s.cursor > 1 ? s.plies[s.cursor - 2] : null;
     const userPly = viewed?.by === 'user' ? viewed : prevPly?.by === 'user' ? prevPly : null;
     const userReview = userPly?.review;
-    const canPreview =
-      coach && !!userReview?.bestUci && ['Inaccuracy', 'Mistake', 'Blunder'].includes(userReview.classification);
+    const canPreview = coach && !!userReview?.bestUci && isBad(userReview.classification);
     const preview = this.previewBetter && canPreview;
 
     // Board
@@ -519,32 +621,38 @@ class App {
     const focus = coach && this.focusedTip?.fen === fen ? this.focusedTip.tip : null;
     if (focus) for (const sq of focus.squares) shapes.push({ from: sq, brush: focus.kind === 'tactic' ? 'red' : 'paleBlue' });
 
-    const turn = fen.split(' ')[1] as Color;
-    if (this.walk !== null && (!over || this.walk >= s.plies.length)) this.walk = null;
-    const walking = this.walk !== null;
-    const userCanMove =
-      !walking && !preview && turn === this.userColor && !(s.atLatest && (over || this.botThinking));
-    const chess = s.chessAt();
-    this.board.render({
-      fen,
-      orientation: this.orientation,
-      turn,
-      movable: userCanMove ? this.userColor : null,
-      dests: userCanMove ? s.legalDests() : new Map(),
-      lastMove,
-      check: !preview && chess.inCheck(),
-      shapes: [...(coach ? shapes : []), ...hintShapes],
-    });
+    let turn = fen.split(' ')[1] as Color;
+    if (screen) {
+      // The review screen owns the board while it's open.
+      const v = screen.boardView();
+      fen = v.fen;
+      turn = v.turn;
+      this.board.render({ ...v, orientation: this.orientation });
+      renderEvalBar($('evalbar'), v.evalCp, this.orientation, true);
+    } else {
+      const userCanMove = !preview && turn === this.userColor && !(s.atLatest && (over || this.botThinking));
+      const chess = s.chessAt();
+      this.board.render({
+        fen,
+        orientation: this.orientation,
+        turn,
+        movable: userCanMove ? this.userColor : null,
+        dests: userCanMove ? s.legalDests() : new Map(),
+        lastMove,
+        check: !preview && chess.inCheck(),
+        shapes: [...(coach ? shapes : []), ...hintShapes],
+      });
 
-    // Eval bar: the viewed position's eval.
-    let cp: number | null = null;
-    if (preview && userReview) cp = userReview.evalBefore;
-    else if (review) cp = review.evalAfter;
-    else {
-      const a = this.resolved.get(fen);
-      if (a?.lines[0]) cp = a.lines[0].cp * (turn === 'w' ? 1 : -1);
+      // Eval bar: the viewed position's eval.
+      let cp: number | null = null;
+      if (preview && userReview) cp = userReview.evalBefore;
+      else if (review) cp = review.evalAfter;
+      else {
+        const a = this.resolved.get(fen);
+        if (a?.lines[0]) cp = a.lines[0].cp * (turn === 'w' ? 1 : -1);
+      }
+      renderEvalBar($('evalbar'), cp, this.orientation, coach);
     }
-    renderEvalBar($('evalbar'), cp, this.orientation, coach);
 
     // Player bars: the side at the top of the board above it, the other below.
     const material = materialSummary(fen);
@@ -590,70 +698,23 @@ class App {
     $<HTMLButtonElement>('nav-next').disabled = s.atLatest;
     $<HTMLButtonElement>('nav-last').disabled = s.atLatest;
     // Any earlier position can become the new end of the game, whoever is to move there.
-    $('continue-here').hidden = s.atLatest || this.walk !== null;
+    $('continue-here').hidden = s.atLatest || !!screen;
     $<HTMLInputElement>('coach-toggle').checked = this.settings.coachDuringPlay;
     $<HTMLInputElement>('review-toggle').checked = this.settings.autoReview;
 
-    // Game review (once the game is over)
-    const showReview = this.reviewOpen && !!over && !walking;
-    const gameReview = over && (showReview || walking) ? buildGameReview(s.plies, this.userColor) : null;
-    $('coach-card').hidden = walking;
-    $('tips-card').hidden = walking;
-    const walkEl = $('walkthrough');
-    walkEl.hidden = !walking;
-    if (walking && gameReview) {
-      renderWalkthrough(walkEl, {
-        plies: s.plies,
-        step: this.walk!,
-        userColor: this.userColor,
-        moments: gameReview.moments,
-        previewOn: preview,
-        onTogglePreview: () => {
-          this.previewBetter = !this.previewBetter;
-          this.render();
-        },
-        onGo: (i) => this.walkGo(i),
-        onNextMistake: () => {
-          const next = nextMistake(s.plies, this.walk ?? -1, this.userColor);
-          if (next !== null) this.walkGo(next);
-        },
-        onTry: () => this.walkTry(),
-        onExit: () => this.exitWalkthrough(),
-      });
-    }
+    // Game review screen (once the game is over)
     const reviewBtn = $<HTMLButtonElement>('btn-review');
     reviewBtn.disabled = !over;
-    reviewBtn.textContent = showReview ? 'Hide review' : 'Game review';
-    reviewBtn.setAttribute('aria-pressed', showReview ? 'true' : 'false');
+    reviewBtn.textContent = screen ? 'Close review' : 'Game review';
+    reviewBtn.setAttribute('aria-pressed', screen ? 'true' : 'false');
+    for (const id of ['coach-card', 'tips-card', 'moves-card']) $(id).hidden = !!screen;
     const reviewEl = $('review');
-    reviewEl.hidden = !showReview;
-    if (showReview && over) {
-      renderReviewCard(reviewEl, {
-        review: gameReview!,
-        onWalk: () => this.startWalkthrough(),
-        result: over,
-        userColor: this.userColor,
-        elo: s.state.elo,
-        cursor: s.cursor,
-        onClose: () => {
-          this.reviewOpen = false;
-          this.render();
-        },
-        onShow: (i) => {
-          s.goTo(i + 1);
-          this.previewBetter = true;
-          this.render();
-        },
-        onRetry: (i) => {
-          s.goTo(i);
-          this.previewBetter = false;
-          this.render();
-        },
-        onSeek: (n) => {
-          s.goTo(n);
-          this.previewBetter = false;
-          this.render();
-        },
+    const coachLine = $('coach-line');
+    reviewEl.hidden = !screen;
+    coachLine.hidden = !screen;
+    if (screen) {
+      renderReviewScreen(reviewEl, coachLine, screen, (f) => this.resolved.get(f), (f) => void this.analyze(f).catch(() => {}), {
+        before: [h2('Game review'), closeButton(() => this.closeScreen())],
       });
     }
 
@@ -682,7 +743,6 @@ class App {
     renderExplanation($('explain'), view);
 
     renderMoves($('moves'), s.plies, s.cursor, coach, (n) => {
-      if (this.walk !== null) return this.walkGo(n - 1);
       this.previewBetter = false;
       s.goTo(n);
       this.render();
@@ -692,7 +752,7 @@ class App {
   statusText(): string {
     if (this.engineError) return `Engine error: ${this.engineError}`;
     const s = this.session;
-    if (this.walk !== null) return `Move-by-move review: move ${this.walk + 1} of ${s.plies.length}. Use ← → to step through.`;
+    if (this.screen) return `Reviewing the game: ${this.screen.step ? `after ${moveLabel(s.plies[this.screen.step - 1])}` : 'start position'}. Use ← → to step through.`;
     const r = s.result();
     const viewing = s.cursor > 0 ? moveLabel(s.plies[s.cursor - 1]) : 'the start';
     if (r) {
@@ -741,11 +801,7 @@ class App {
     $('btn-resign').addEventListener('click', () => void this.resign());
     $('btn-pgn').addEventListener('click', () => this.downloadPgn());
     $('continue-here').addEventListener('click', () => void this.continueFromHere());
-    $('btn-review').addEventListener('click', () => {
-      this.reviewOpen = !this.reviewOpen;
-      this.render();
-      if (this.reviewOpen) $('review').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    });
+    $('btn-review').addEventListener('click', () => (this.screen ? this.closeScreen() : this.openScreen('summary')));
     $<HTMLInputElement>('review-toggle').addEventListener('change', (e) => {
       this.settings.autoReview = (e.target as HTMLInputElement).checked;
       saveSettings(this.settings);
@@ -757,8 +813,8 @@ class App {
     });
 
     const nav = (n: number) => {
-      // In the move-by-move review the board buttons step through the review instead.
-      if (this.walk !== null) return this.walkGo(n - 1);
+      // While the review is open, the board buttons step through it instead.
+      if (this.screen) return this.screen.goTo(n);
       this.previewBetter = false;
       this.session.goTo(n);
       this.render();
@@ -774,28 +830,13 @@ class App {
         return;
       }
       if (this.settings.mode === 'review') {
-        const og = this.reviewMode.current;
-        if (this.reviewMode.view !== 'game' || !og) return;
-        const to = { ArrowLeft: og.step - 1, ArrowRight: og.step + 1, Home: 0, End: og.imported.moves.length }[e.key];
-        if (to !== undefined) {
-          e.preventDefault();
-          this.reviewMode.goTo(to);
-        }
+        const rs = this.reviewMode.view === 'game' ? this.reviewMode.screen : null;
+        if (rs && screenKey(rs, e)) e.preventDefault();
         return;
       }
-      if (this.walk !== null) {
-        const step = this.walk;
-        const go: Record<string, () => void> = {
-          ArrowLeft: () => this.walkGo(step - 1),
-          ArrowRight: () => (step >= this.session.plies.length - 1 ? this.exitWalkthrough() : this.walkGo(step + 1)),
-          Home: () => this.walkGo(0),
-          End: () => this.walkGo(this.session.plies.length - 1),
-          Escape: () => this.exitWalkthrough(),
-        };
-        if (go[e.key]) {
-          e.preventDefault();
-          go[e.key]();
-        }
+      if (this.screen) {
+        if (screenKey(this.screen, e)) e.preventDefault();
+        else if (e.key === 'Escape') this.closeScreen();
         return;
       }
       const keys: Record<string, () => number> = {
@@ -881,3 +922,40 @@ class App {
 const app = new App();
 // Dev server only (stripped from production builds): lets tests drive the app from the console.
 if (import.meta.env.DEV) (window as unknown as { __app: App }).__app = app;
+
+function isPromotionMove(fen: string, from: string, to: string): boolean {
+  return new Chess(fen).moves({ verbose: true }).some((m) => m.from === from && m.to === to && !!m.promotion);
+}
+
+function h2(text: string): HTMLElement {
+  const el = document.createElement('h2');
+  el.textContent = text;
+  return el;
+}
+
+function closeButton(onClick: () => void): HTMLElement {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'btn small rs-close';
+  b.textContent = 'Close';
+  b.addEventListener('click', onClick);
+  return b;
+}
+
+/** Keyboard for a review screen: ← → step, Home/End, Shift+← → jump between key moments. */
+function screenKey(rs: ReviewScreen, e: KeyboardEvent): boolean {
+  if (rs.mode.kind === 'line' && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+    rs.lineStep(e.key === 'ArrowRight' ? 1 : -1);
+    return true;
+  }
+  if (rs.mode.kind !== 'game') return false;
+  const map: Record<string, () => void> = {
+    ArrowLeft: () => (e.shiftKey ? rs.jumpKey(-1) : rs.prev()),
+    ArrowRight: () => (e.shiftKey ? rs.jumpKey(1) : rs.next()),
+    Home: () => rs.goTo(0),
+    End: () => rs.goTo(rs.plies.length),
+  };
+  if (!map[e.key]) return false;
+  map[e.key]();
+  return true;
+}

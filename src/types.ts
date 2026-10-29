@@ -2,7 +2,21 @@ import type { Color } from 'chess.js';
 
 export type { Color };
 
-export type Classification = 'Best' | 'Good' | 'Inaccuracy' | 'Mistake' | 'Blunder';
+/**
+ * Move classes, best to worst. Reviews saved before model 2 only use Best, Good, Inaccuracy,
+ * Mistake and Blunder; they're migrated on load (see coach/moveClass.ts).
+ */
+export type Classification =
+  | 'Brilliant'
+  | 'Great'
+  | 'Best'
+  | 'Excellent'
+  | 'Good'
+  | 'Book'
+  | 'Inaccuracy'
+  | 'Mistake'
+  | 'Miss'
+  | 'Blunder';
 
 /**
  * Coach verdict on one move. Evals are in centipawns from White's point of view;
@@ -11,6 +25,10 @@ export type Classification = 'Best' | 'Good' | 'Inaccuracy' | 'Mistake' | 'Blund
 export interface MoveReview {
   classification: Classification;
   cpLoss: number;
+  /** Classification model: 2 = win-probability classes (missing on older saves = 1). */
+  model?: number;
+  /** Drop in the mover's winning chance, percentage points (model 2). */
+  winDrop?: number;
   evalBefore: number;
   evalAfter: number;
   bestUci: string | null;

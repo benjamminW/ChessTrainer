@@ -6,6 +6,8 @@ export interface MoveAnalysis {
   evalBefore: number;
   evalAfter: number;
   cpLoss: number;
+  /** Drop in the mover's winning chance, percentage points (version 2+). */
+  winDrop?: number;
   classification: Classification;
   bestUci: string | null;
   bestSan: string | null;

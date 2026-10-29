@@ -34,6 +34,6 @@ export const REVIEW_CONFIG = {
   minSample: 5,
   /** A saved puzzle's solution stops after this many of your moves. */
   puzzleMaxMoves: 3,
-  /** Bumped when the cached per-move data format changes, so old cache entries are re-analyzed. */
-  analysisVersion: 1,
+  /** Bumped when the cached per-move data format changes; older entries are migrated (review/migrate.ts). */
+  analysisVersion: 2,
 };

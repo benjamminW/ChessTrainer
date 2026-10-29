@@ -26,6 +26,11 @@ export interface SearchOptions {
   multiPv: number;
   /** Restrict the search to these UCI moves. */
   searchMoves?: string[];
+  /**
+   * Who asked ('play', 'review', …). `cancelAll(owner)` only cancels that owner's searches,
+   * so starting a new game doesn't kill a Review-mode analysis sharing the same engine.
+   */
+  owner?: string;
 }
 
 export interface EngineOption {
@@ -82,7 +87,8 @@ export function parseInfo(line: string): PvLine | null {
 
 /**
  * Stockfish running in a Web Worker, driven over UCI. Searches are queued and run
- * one at a time; `cancelAll()` drops queued searches and stops the running one.
+ * one at a time; `cancelAll(owner?)` drops queued searches and stops the running one
+ * (all of them, or only those of one owner).
  */
 export class Engine {
   private worker: Worker;
@@ -125,10 +131,11 @@ export class Engine {
     });
   }
 
-  cancelAll(): void {
-    for (const j of this.queue) j.reject(new SearchCancelled());
-    this.queue = [];
-    if (this.current && !this.current.cancelled) {
+  cancelAll(owner?: string): void {
+    const mine = (j: Job) => owner === undefined || j.opts.owner === owner;
+    for (const j of this.queue) if (mine(j)) j.reject(new SearchCancelled());
+    this.queue = this.queue.filter((j) => !mine(j));
+    if (this.current && !this.current.cancelled && mine(this.current)) {
       this.current.cancelled = true;
       this.send('stop');
     }

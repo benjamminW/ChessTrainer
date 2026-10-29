@@ -3,14 +3,18 @@
 Play Stockfish at a strength from 400 to 2500 Elo, and get a plain-English explanation of every move: yours and the bot's. Everything runs in the browser. There's no backend, so it can be hosted as a static site on GitHub Pages.
 
 - **Human-like strength levels.** The bot picks from the engine's top moves with a strength-dependent probability. Below 1200 it also makes real beginner mistakes. It pauses to "think" before moving.
-- **Move ratings.** Every move is rated Best / Good / Inaccuracy / Mistake / Blunder. Your weaker moves get the better move, its eval, and concrete reasons, for example: "Leaves your bishop on a6 undefended", "Allows a fork: Nc7+ hits your king and rook", "You had mate in 2".
+- **Move ratings.** Every move gets one of ten classes: Brilliant, Great, Best, Excellent, Good, Book, Inaccuracy, Mistake, Miss or Blunder (see [Move classes](#move-classes)). Your weaker moves get the better move, its eval, and concrete reasons, for example: "Leaves your bishop on a6 undefended", "Allows a fork: Nc7+ hits your king and rook", "You had mate in 2".
 - **Board aids.** An eval bar, the engine's principal variation, and a green arrow for the better move.
 - **Hint button.** Available on any of your moves, including when reviewing an earlier position. Each press reveals more: first the idea ("look for a fork"), then the piece to move (circled), then the move itself (arrow, eval and line). Hints work even with the coach hidden. The number of hints used is shown and saved in the PGN.
 - **Tactics and strategy tips.** A Tips card lists what matters in the current position. Tactics include mate threats, pieces in danger, loose enemy pieces, pins, fork chances and back-rank weaknesses. Strategy covers development, castling, the center, king activity, passed pawns, open files, the bishop pair and pawn weaknesses. Click a tip to circle its squares on the board.
-- **Game review.** When a game ends you're asked whether to **go through it move by move**, see **just the summary**, or skip it.
-  - *Move by move* steps through every move with Next / Previous (or ← →), or jumps straight to your next mistake. Coach moves get a one-line idea. At each of your inaccuracies, mistakes and blunders the board shows the position before the move with a green arrow for the better move, and the card explains what went wrong, how your winning chances changed, the best line and a tip. **Try it yourself** takes you back to that position to play it differently. A strip of colored cells shows the whole game at a glance.
-  - *The summary* shows both sides' accuracy, the Best / Good / Inaccuracy / Mistake / Blunder counts, an eval graph (click to jump), accuracy per game phase, and your mistakes, with the costliest marked **Turning point** and unpunished coach blunders marked **Missed chance**.
-  - Turn off "Offer a game review when the game ends" to skip the question; the **Game review** button still opens it after any finished game.
+- **Game review.** When a game ends you're offered three ways in: **Go through it move by move**, **Jump to key moments**, or **Just the summary**. The review screen (also used for imported Chess.com games) has:
+  - a summary card: accuracy for both players as big numbers, this app's **estimated game rating** for each side (with a range), a count of every move class with its icon, the opening and where you left book, phase grades, and the result;
+  - an eval graph (White above the middle line) with colored dots for brilliant, great, inaccurate, mistaken, missed and blundered moves, a marker that follows the board, M3-style mate labels on hover, and click-to-jump;
+  - an icon badge and a colored square on every move, plus a **coach line under the board**: "3… Nf6 is a blunder. Best was g6." with the eval change and the coach's explanation;
+  - **Retry** (try the position again; your new move is graded) and **Show best** (plays the engine's line) on your non-best moves;
+  - first/previous/next/last, the arrow keys, and **previous/next key moment** (Shift + ←/→);
+  - a move list with icons, key moments for both sides, and a collapsible **Engine lines** panel showing the top 3 lines (click one to step through it).
+  - **Deeper analysis** re-analyzes the game at depth 18 and replaces the result. Turn off "Offer a game review when the game ends" to skip the question; the **Game review** button still opens it.
 - **Lessons.** Explanations of your weaker moves end with a short general tip matched to the error, such as a blunder check after hanging a piece.
 - **Hint-free play.** "Show coach and tips during play" can be switched off. Explanations, tips, the eval bar and arrows then appear only after the game ends. The Hint button still works when you ask for it.
 - **Review mode.** Enter a Chess.com username to import your public games, analyze them in the background, and get a review of each game plus patterns across games: accuracy, key moments with explanations, openings and where you left theory, clock use, recurring weaknesses with the numbers behind them. See [Review mode](#review-mode-chesscom-games).
@@ -75,11 +79,11 @@ Games are analyzed one at a time, most recent first, on the same Stockfish worke
 | Quick (default) | 14 | ~30–60 s |
 | Deep | 18 | a few minutes |
 
-Depths and the other review settings (time-trouble threshold, minimum sample size, number of key moments) are in `src/config/review.ts`. Each move is classified with the same classifier and thresholds as in your games against the coach (Best / Good / Inaccuracy / Mistake / Blunder; there are no Brilliant or Great labels), and your inaccuracies, mistakes and blunders get the same explanations.
+Depths and the other review settings (time-trouble threshold, minimum sample size, number of key moments) are in `src/config/review.ts`. Each move is classified with the same classifier and thresholds as in your games against the coach (see [Move classes](#move-classes)), and your weaker moves get the same explanations. Moves appear in the review as soon as they're analyzed, so you can start stepping through a game while the rest is still being analyzed; the summary fills in when it's done. Cached analyses from before the 10-class model are migrated automatically (see below), and **Analyze deeper** replaces a cached entry with a depth-18 analysis.
 
 ### How accuracy is computed
 
-For each move, the evaluation before and after is turned into a winning chance with Lichess's formula, `win% = 50 + 50 × (2 / (1 + e^(−0.00368208 × cp)) − 1)`, and the move's accuracy is `103.1668 × e^(−0.04354 × (win% before − win% after)) − 3.1669`, clamped to 0–100. A game's accuracy is the plain average over that side's moves (Lichess additionally weights by volatility; this app doesn't). Average centipawn loss (ACPL) is the mean of the clamped centipawn losses.
+Accuracy, the estimated game rating and phase grades are computed exactly as in your games against the coach: see [Accuracy, estimated game rating and phase grades](#accuracy-estimated-game-rating-and-phase-grades). Average centipawn loss (ACPL) is the mean of the clamped centipawn losses.
 
 **This will not match Chess.com's accuracy.** Chess.com uses its own engine, depth and (unpublished) formula. When a game has Chess.com's own figures, the review shows them separately, labeled as Chess.com's.
 
@@ -180,11 +184,43 @@ option name Threads type spin default 1 min 1 max 1
 
 ## How the coach works
 
-Classification thresholds and analysis depth are in **`src/config/coach.ts`**.
+Classification thresholds and analysis depth are in **`src/config/coach.ts`**; the review estimates are in **`src/coach/estimate.ts`**.
 
-- **Analysis.** Every position is analysed once by the coach engine at a fixed depth (13, MultiPV 3), independent of the bot's strength, and cached by FEN.
-- **Centipawn loss.** Loss is the score of the engine's best move minus the score of the played move, both from the mover's point of view. If the played move is among the MultiPV lines, its score comes from that same search. Otherwise it comes from the analysis of the position after the move. Both evals are clamped to ±1000 cp, so +15 → +9 isn't called a blunder.
-- **Labels.** Best ≤ 10 cp (or the engine's top move), Good ≤ 50, Inaccuracy ≤ 100, Mistake ≤ 250, Blunder above that.
+- **Analysis.** Every position is analysed once by the coach engine at a fixed depth (13, MultiPV 3), independent of the bot's strength, and cached by FEN. If the played move is among the MultiPV lines, its score comes from that same search; otherwise from the analysis of the position after the move.
+
+### Move classes
+
+Moves are classified by how much they lower the mover's **winning chance**, not by raw centipawns:
+
+`win% = 50 + 50 × (2 / (1 + e^(−0.00368208 × cp)) − 1)`
+
+This is Lichess's logistic curve; the constant 0.00368208 maps +1 pawn to about 59% and +3 to about 75%. Forced mates count as 100% (or 0%), so a mate score can never produce an infinite or nonsensical drop. A move's **drop** is the win% after the engine's best move minus the win% after the move played, in percentage points.
+
+| Class | Rule |
+|---|---|
+| **Best** | the engine's top move, or a drop under 0.5 |
+| **Excellent** | drop ≤ 2 |
+| **Good** | drop ≤ 5 |
+| **Book** | still inside the opening dataset (this move and every move before it), whatever the engine says |
+| **Inaccuracy** | drop ≤ 10 |
+| **Mistake** | drop ≤ 20 |
+| **Blunder** | drop > 20 |
+| **Miss** | you had a clear win (best move ≥ 75% or a forced mate), dropped ≥ 10 points, but are still ≥ 40%. If you end up below 40% it's a Mistake or Blunder instead |
+| **Great** | the only good move: Best, the second-best line is ≥ 15 points worse, the position was equal or worse (≤ 60%), and it wasn't the only legal move or a simple recapture |
+| **Brilliant** | Best, Excellent or Great **and** a real sacrifice: right after the move the opponent can win at least a minor piece for a net gain of 2+ pawns (not a trade, not a pawn, not a piece that was already hanging); you weren't already above 90%; and an extra engine search (depth 12) of the opponent taking the material still leaves you ≥ 50% and within 2 points of the best line. It's deliberately conservative: a false Brilliant is worse than a missed one |
+
+All thresholds are in `MOVE_CLASS` in `src/config/coach.ts`. Average centipawn loss is still computed (with evals clamped to ±10 pawns) for ACPL figures.
+
+**Migration.** Reviews saved before this model (the old five centipawn-based classes) still load. Play games are reclassified from their stored evals when the app starts, and their opening moves are tagged Book once the opening dataset loads. Review-mode cache entries are upgraded in IndexedDB the first time they're read (version 1 → 2); they stored the best/second-best gap, so Great is recovered too. Brilliant needs an engine search, so migrated games only get it after **Deeper analysis**.
+
+### Accuracy, estimated game rating and phase grades
+
+These are **this app's own estimates**. They will not match Chess.com's accuracy or game rating, which are proprietary; the review says so next to the numbers.
+
+- **Accuracy** per move is `103.1668 × e^(−0.04354 × drop) − 3.1669`, clamped to 0–100 (Lichess's formula), and a side's game accuracy is the plain average over its moves (Lichess also weights by volatility; this app doesn't).
+- **Estimated game rating** comes from the side's average drop per move (Book moves count as 0), mapped through this table with linear interpolation: 0.5 → 2800, 1 → 2500, 2 → 2150, 3 → 1900, 4 → 1700, 5 → 1550, 7 → 1300, 10 → 1050, 14 → 800, 20 → 550, 30 → 300. It's shown as a range: ±150 at 40 moves, widening as √(40 / moves) on shorter games, and flagged "short game: very rough" under 15 moves. It's a rough performance guide, not a rating.
+- **Phase grades** use the average drop per move in each phase: ≤ 2 Excellent, ≤ 4 Good, ≤ 7 Inaccurate, otherwise Poor. Phases: a position is an *endgame* when the pieces other than pawns and kings add up to 20 points or less (knight/bishop 3, rook 5, queen 9), or 26 or less with both queens off; otherwise it's the *opening* through move 10 and the *middlegame* after that. A phase that never happened is skipped.
+
 - **Explanations.** These come from `src/coach/ruleBased.ts`, using facts computed in `src/coach/facts.ts` with chess.js: pieces left hanging, forks, captures and mates allowed by the opponent's best reply, missed captures, forks and mates, castling rights given up, and material over the next few moves of each line. For bot moves, it writes one line on the idea: develops, captures, attacks X, defends Y, threatens mate, and so on.
 
 ### Hints and tips
@@ -229,14 +265,16 @@ src/
   coach/hints.ts       three-level hints
   coach/tips.ts        tactics and strategy tips
   coach/gameReview.ts  post-game review: accuracy, key moments, phases
-  ui/reviewCard.ts     the game review summary card and eval graph
-  ui/walkthrough.ts    the move-by-move review
   puzzles/             puzzle mode: parser, move line, rating, progress store, selection, sources, controller
   ui/puzzlePanel.ts    the puzzle side panel
   review/              Review mode: Chess.com client, PGN import, IndexedDB cache, analysis queue,
                        per-game stats, openings, patterns, save-as-puzzle, controller
   config/review.ts     review presets and thresholds
   ui/reviewPanel.ts    the Review side panel
+  reviewScreen/        the shared game review screen (summary, coach line, retry, lines, key moments)
+  coach/moveClass.ts   the 10-class classifier (Book/Miss/Great/Brilliant rules) and migration
+  coach/estimate.ts    estimated game rating and phase grades
+  ui/classIcons.ts     the move-class icons and board badges
   game/session.ts      game state, takebacks, branching, result detection
   game/pgn.ts          PGN export with comments
   game/persistence.ts  localStorage

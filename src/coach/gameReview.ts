@@ -4,10 +4,13 @@
  */
 import { Chess } from 'chess.js';
 import type { Classification, Color, PlyRecord } from '../types';
+import { BAD_CLASSES, CLASS_ORDER, ERROR_CLASSES } from './classes';
+import { estimateRating, phaseGrade, type PhaseGrade, type RatingEstimate } from './estimate';
 import { gamePhase, type Phase } from './facts';
 import { formatEval } from './format';
 
-export const CLASSES: Classification[] = ['Best', 'Good', 'Inaccuracy', 'Mistake', 'Blunder'];
+/** All classes, best to worst (for count tables). */
+export const CLASSES: Classification[] = CLASS_ORDER;
 
 /** Chance of winning (0–100) for a centipawn eval from the mover's POV (lichess's formula). */
 export function winPercent(cp: number): number {
@@ -27,6 +30,10 @@ export interface SideStats {
   accuracy: number | null;
   /** Average centipawn loss, or null with no reviewed moves. */
   acpl: number | null;
+  /** This app's estimated performance rating (see coach/estimate.ts). */
+  rating: RatingEstimate | null;
+  /** Per-phase stats and grades for this side (phases that never happened are left out). */
+  phases: PhaseStats[];
 }
 
 export interface KeyMoment {
@@ -53,6 +60,9 @@ export interface PhaseStats {
   accuracy: number | null;
   /** Average centipawn loss in this phase. */
   acpl: number | null;
+  /** Average drop in win chance per move, percentage points. */
+  avgDrop: number | null;
+  grade: PhaseGrade | null;
   mistakes: number;
 }
 
@@ -70,12 +80,24 @@ export interface GameReview {
   summary: string[];
 }
 
-const BAD: Classification[] = ['Inaccuracy', 'Mistake', 'Blunder'];
+const BAD = BAD_CLASSES;
 const sign = (c: Color) => (c === 'w' ? 1 : -1);
 const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
 
 function emptyCounts(): Record<Classification, number> {
-  return { Best: 0, Good: 0, Inaccuracy: 0, Mistake: 0, Blunder: 0 };
+  return Object.fromEntries(CLASS_ORDER.map((c) => [c, 0])) as Record<Classification, number>;
+}
+
+type PhaseAcc = { acc: number[]; loss: number[]; drop: number[]; mistakes: number };
+
+function phaseList(m: Map<Phase, PhaseAcc>): PhaseStats[] {
+  return (['opening', 'middlegame', 'endgame'] as Phase[])
+    .filter((ph) => m.has(ph))
+    .map((ph) => {
+      const x = m.get(ph)!;
+      const avgDrop = mean(x.drop);
+      return { phase: ph, moves: x.acc.length, accuracy: mean(x.acc), acpl: mean(x.loss), avgDrop, grade: avgDrop === null ? null : phaseGrade(avgDrop), mistakes: x.mistakes };
+    });
 }
 
 const PHASE_NAMES: Record<Phase, string> = { opening: 'opening', middlegame: 'middlegame', endgame: 'endgame' };
@@ -85,7 +107,8 @@ export function buildGameReview(plies: PlyRecord[], userColor: Color): GameRevie
   const loss: Record<Color, number[]> = { w: [], b: [] };
   const counts: Record<Color, Record<Classification, number>> = { w: emptyCounts(), b: emptyCounts() };
   const moves: Record<Color, number> = { w: 0, b: 0 };
-  const phaseAcc = new Map<Phase, { acc: number[]; loss: number[]; mistakes: number }>();
+  const drops: Record<Color, number[]> = { w: [], b: [] };
+  const phaseBy: Record<Color, Map<Phase, PhaseAcc>> = { w: new Map(), b: new Map() };
   const moments: KeyMoment[] = [];
   let pending = 0;
 
@@ -100,21 +123,25 @@ export function buildGameReview(plies: PlyRecord[], userColor: Color): GameRevie
     const winBefore = winPercent(r.evalBefore * s);
     const winAfter = winPercent(r.evalAfter * s);
     const a = moveAccuracy(winBefore, winAfter);
+    const drop = r.classification === 'Book' ? 0 : Math.max(0, winBefore - winAfter);
     acc[p.color].push(a);
     loss[p.color].push(r.cpLoss);
+    drops[p.color].push(drop);
     counts[p.color][r.classification]++;
 
-    if (p.color !== userColor) return;
     const phase = gamePhase(new Chess(p.fenBefore));
-    const ph = phaseAcc.get(phase) ?? { acc: [], loss: [], mistakes: 0 };
+    const ph = phaseBy[p.color].get(phase) ?? { acc: [], loss: [], drop: [], mistakes: 0 };
     ph.acc.push(a);
     ph.loss.push(r.cpLoss);
+    ph.drop.push(drop);
     if (BAD.includes(r.classification)) ph.mistakes++;
-    phaseAcc.set(phase, ph);
+    phaseBy[p.color].set(phase, ph);
+
+    if (p.color !== userColor) return;
 
     if (!BAD.includes(r.classification)) return;
     const prev = i > 0 ? plies[i - 1] : null;
-    const prevBad = prev?.review && (prev.review.classification === 'Mistake' || prev.review.classification === 'Blunder');
+    const prevBad = prev?.review && ERROR_CLASSES.includes(prev.review.classification);
     const e = r.explanation;
     moments.push({
       index: i,
@@ -142,13 +169,10 @@ export function buildGameReview(plies: PlyRecord[], userColor: Color): GameRevie
     counts: counts[c],
     accuracy: mean(acc[c]),
     acpl: mean(loss[c]),
+    rating: estimateRating(drops[c]),
+    phases: phaseList(phaseBy[c]),
   });
-  const phases: PhaseStats[] = (['opening', 'middlegame', 'endgame'] as Phase[])
-    .filter((ph) => phaseAcc.has(ph))
-    .map((ph) => {
-      const x = phaseAcc.get(ph)!;
-      return { phase: ph, moves: x.acc.length, accuracy: mean(x.acc), acpl: mean(x.loss), mistakes: x.mistakes };
-    });
+  const phases = phaseList(phaseBy[userColor]);
 
   return {
     stats: { w: stats('w'), b: stats('b') },
@@ -171,6 +195,7 @@ function summarize(c: Record<Classification, number>, moments: KeyMoment[], phas
   const parts = [
     c.Blunder && plural(c.Blunder, 'blunder'),
     c.Mistake && plural(c.Mistake, 'mistake'),
+    c.Miss && plural(c.Miss, 'missed win'),
     c.Inaccuracy && `${c.Inaccuracy} ${c.Inaccuracy === 1 ? 'inaccuracy' : 'inaccuracies'}`,
   ].filter(Boolean) as string[];
   if (parts.length === 0) {

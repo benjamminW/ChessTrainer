@@ -72,6 +72,16 @@ export function identifyOpening(book: OpeningBook, moves: { uci: string; color: 
   };
 }
 
+/** How many moves from the start are still book moves (Book applies to these plies only). */
+export function bookPrefix(book: OpeningBook, moves: { uci: string; fenBefore: string; fenAfter: string }[]): number {
+  let n = 0;
+  for (const m of moves) {
+    if (!book.next.get(posKey(m.fenBefore))?.has(m.uci) && !book.next.has(posKey(m.fenAfter))) break;
+    n++;
+  }
+  return n;
+}
+
 let bookPromise: Promise<OpeningBook> | null = null;
 
 /** Loads and indexes the dataset once (only when Review mode needs it). */

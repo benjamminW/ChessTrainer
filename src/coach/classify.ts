@@ -1,4 +1,4 @@
-import { COACH_CONFIG, MATE_CP, type Thresholds } from '../config/coach';
+import { COACH_CONFIG, MATE_CP, MOVE_CLASS, type MoveClassConfig } from '../config/coach';
 import type { Classification } from '../types';
 
 export function clampCp(cp: number, clamp = COACH_CONFIG.clampCp): number {
@@ -14,15 +14,16 @@ export function cpLoss(bestCp: number, playedCp: number, clamp = COACH_CONFIG.cl
   return Math.max(0, clampCp(bestCp, clamp) - clampCp(playedCp, clamp));
 }
 
-export function classify(
-  loss: number,
-  isEngineBest: boolean,
-  t: Thresholds = COACH_CONFIG.thresholds,
-): Classification {
-  if (isEngineBest || loss <= t.best) return 'Best';
-  if (loss <= t.good) return 'Good';
-  if (loss <= t.inaccuracy) return 'Inaccuracy';
-  if (loss <= t.mistake) return 'Mistake';
+/**
+ * Base class from the drop in win chance (model 2). Book, Miss, Great and Brilliant are
+ * layered on top by classifyMove() in coach/moveClass.ts.
+ */
+export function classify(drop: number, isEngineBest: boolean, t: MoveClassConfig = MOVE_CLASS): Classification {
+  if (isEngineBest || drop < t.best) return 'Best';
+  if (drop <= t.excellent) return 'Excellent';
+  if (drop <= t.good) return 'Good';
+  if (drop <= t.inaccuracy) return 'Inaccuracy';
+  if (drop <= t.mistake) return 'Mistake';
   return 'Blunder';
 }
 

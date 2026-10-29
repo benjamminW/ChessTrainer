@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { classify, cpLoss, mateIn } from '../src/coach/classify';
 import { formatEval, formatLine } from '../src/coach/format';
 import { scoreMove } from '../src/coach/review';
-import { COACH_CONFIG, MATE_CP } from '../src/config/coach';
+import { MATE_CP, MOVE_CLASS } from '../src/config/coach';
 import { mateToCp, parseInfo, type Analysis, type PvLine } from '../src/engine/uci';
 import type { PlyRecord } from '../src/types';
 import { Session, newGameState } from '../src/game/session';
 
-const T = COACH_CONFIG.thresholds;
+const T = MOVE_CLASS;
 
 describe('cpLoss', () => {
   it('is the drop from best to played, never negative', () => {
@@ -26,28 +26,19 @@ describe('cpLoss', () => {
   });
 });
 
-describe('classify', () => {
-  it('maps loss to labels at the configured thresholds (inclusive)', () => {
+describe('classify (win-probability drop)', () => {
+  it('maps the drop to classes at the configured thresholds', () => {
     expect(classify(0, false)).toBe('Best');
-    expect(classify(T.best, false)).toBe('Best');
-    expect(classify(T.best + 1, false)).toBe('Good');
+    expect(classify(T.best - 0.01, false)).toBe('Best');
+    expect(classify(T.excellent, false)).toBe('Excellent');
     expect(classify(T.good, false)).toBe('Good');
-    expect(classify(T.good + 1, false)).toBe('Inaccuracy');
     expect(classify(T.inaccuracy, false)).toBe('Inaccuracy');
-    expect(classify(T.inaccuracy + 1, false)).toBe('Mistake');
     expect(classify(T.mistake, false)).toBe('Mistake');
-    expect(classify(T.mistake + 1, false)).toBe('Blunder');
-    expect(classify(5000, false)).toBe('Blunder');
+    expect(classify(T.mistake + 0.1, false)).toBe('Blunder');
   });
 
   it("always calls the engine's own choice Best", () => {
-    expect(classify(80, true)).toBe('Best');
-  });
-
-  it('respects custom thresholds', () => {
-    const t = { best: 0, good: 20, inaccuracy: 40, mistake: 60 };
-    expect(classify(30, false, t)).toBe('Inaccuracy');
-    expect(classify(61, false, t)).toBe('Blunder');
+    expect(classify(30, true)).toBe('Best');
   });
 });
 
@@ -131,7 +122,8 @@ describe('scoreMove', () => {
     const r = scoreMove(ply, before, after);
     expect(r.playedCp).toBe(-200);
     expect(r.cpLoss).toBe(230);
-    expect(r.classification).toBe('Mistake');
+    expect(r.winDrop).toBeCloseTo(20.4, 0);
+    expect(r.classification).toBe('Blunder');
     expect(r.evalAfter).toBe(-200); // White POV
   });
 
@@ -157,11 +149,11 @@ describe('scoreMove', () => {
     expect(mateIn(r.evalAfter)).toBe(0);
   });
 
-  it('flags missing a mate in one as a Blunder', () => {
+  it('flags missing a mate in one (while still winning) as a Miss', () => {
     const fen = '6k1/5ppp/8/8/8/8/5PPP/R5K1 w - - 0 1';
     const ply = plyFor(fen, 'a1a7');
     const before = analysis(fen, [line(mateToCp(1), ['a1a8'])]);
     const after = analysis(ply.fenAfter, [line(-500, ['g8f8'])]);
-    expect(scoreMove(ply, before, after).classification).toBe('Blunder');
+    expect(scoreMove(ply, before, after).classification).toBe('Miss');
   });
 });

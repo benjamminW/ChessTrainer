@@ -533,6 +533,108 @@ body.mode-puzzles .nav { visibility: hidden; }
 .status.bad, .small.bad { color: var(--blunder); }
 .eval-graph .g-swing { fill: var(--accent); }
 
+/* ---------------------------------------------------------------- review screen (Chess.com-style) */
+
+.cls-icon { display: inline-flex; vertical-align: -3px; margin-right: 4px; flex: none; }
+.cls-icon.pending { width: 14px; height: 14px; border-radius: 50%; border: 1px dashed var(--border); }
+.coach-line {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: 0.92rem;
+}
+.coach-line[hidden] { display: none; }
+.coach-line .details { margin: 6px 0; }
+.coach-line .controls { margin-top: 8px; }
+.rs-coach-head { margin: 0; font-weight: 600; display: flex; align-items: center; flex-wrap: wrap; gap: 2px 4px; }
+.rs-coach-head.bad { color: var(--text); }
+.rs-eval { color: var(--muted); font-weight: 400; font-variant-numeric: tabular-nums; font-size: 0.85rem; }
+.rs-close { float: right; margin-top: -26px; }
+#review h2 { margin-bottom: 10px; }
+
+.rs-summary { margin-bottom: 10px; border: 1px solid var(--border); border-radius: var(--radius); padding: 0 10px; }
+.rs-summary > summary { cursor: pointer; padding: 8px 0; font-weight: 600; }
+.rs-summary-body { padding-bottom: 10px; }
+.rs-result { margin: 0; font-weight: 600; }
+.rs-players { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 10px 0 4px; }
+.rs-player { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; text-align: center; }
+.rs-player-name { font-weight: 600; font-size: 0.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rs-acc { font-size: 2.1rem; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.rs-acc-label { display: block; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.rs-est { font-size: 0.82rem; margin-top: 4px; }
+.rs-note { margin: 4px 0 10px; }
+.rs-counts { width: 100%; border-collapse: collapse; font-size: 0.86rem; margin: 6px 0 10px; }
+.rs-counts th, .rs-counts td { padding: 2px 4px; }
+.rs-counts thead th { font-size: 0.72rem; color: var(--muted); font-weight: 600; }
+.rs-counts tbody th { text-align: left; font-weight: 500; display: flex; align-items: center; }
+.rs-counts .rs-n { width: 3em; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; }
+.rs-phases { width: 100%; border-collapse: collapse; font-size: 0.86rem; margin: 6px 0 8px; }
+.rs-phases th, .rs-phases td { padding: 3px 4px; text-align: left; }
+.rs-phases thead th { font-size: 0.72rem; color: var(--muted); font-weight: 600; }
+.rs-grade { font-size: 0.78rem; font-weight: 700; padding: 1px 8px; border-radius: 10px; color: #fff; }
+.rs-grade.g-excellent { background: #5ca33b; }
+.rs-grade.g-good { background: #8fa88a; }
+.rs-grade.g-inaccurate { background: #e3b21b; color: #1c1b1a; }
+.rs-grade.g-poor { background: #cf3a2f; }
+.rs-graph { height: 84px; margin: 4px 0 8px; }
+.eval-graph .g-marker { fill: var(--accent); stroke: #fff; stroke-width: 1.2; }
+.eval-graph .g-dot { stroke: #fff; stroke-width: 0.9; }
+.rs-nav { margin: 4px 0 8px; }
+.rs-moves { max-height: 260px; margin-bottom: 10px; }
+.rs-moves .move-cell { display: inline-flex; align-items: center; }
+.rs-key h3, .rs-lines summary { font-size: 0.85rem; font-weight: 600; }
+.rs-key-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.rs-key ul { list-style: none; margin: 0; padding: 0; }
+.rs-km { margin-bottom: 6px; font-size: 0.88rem; }
+.rs-km .link { display: inline-flex; align-items: center; }
+.rs-km-actions { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 3px; }
+.rs-lines { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 8px; }
+.rs-lines > summary { cursor: pointer; }
+.rs-line-list { margin: 6px 0; padding-left: 18px; }
+.rs-line {
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  width: 100%;
+  border: 0;
+  background: none;
+  color: var(--text);
+  padding: 3px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.rs-line:hover { background: var(--hover); }
+.rs-line-eval { display: inline-block; min-width: 4em; font-weight: 700; }
+.rs-clock { margin-top: 10px; }
+cg-board square.hl-brilliant { background-color: rgba(31,181,168,0.42); }
+cg-board square.hl-brilliant.hl-from { background-color: rgba(31,181,168,0.2); }
+cg-board square.hl-great { background-color: rgba(79,134,216,0.42); }
+cg-board square.hl-great.hl-from { background-color: rgba(79,134,216,0.2); }
+cg-board square.hl-best { background-color: rgba(92,163,59,0.42); }
+cg-board square.hl-best.hl-from { background-color: rgba(92,163,59,0.2); }
+cg-board square.hl-excellent { background-color: rgba(134,184,74,0.42); }
+cg-board square.hl-excellent.hl-from { background-color: rgba(134,184,74,0.2); }
+cg-board square.hl-good { background-color: rgba(143,168,138,0.42); }
+cg-board square.hl-good.hl-from { background-color: rgba(143,168,138,0.2); }
+cg-board square.hl-book { background-color: rgba(169,134,95,0.42); }
+cg-board square.hl-book.hl-from { background-color: rgba(169,134,95,0.2); }
+cg-board square.hl-inaccuracy { background-color: rgba(227,178,27,0.42); }
+cg-board square.hl-inaccuracy.hl-from { background-color: rgba(227,178,27,0.2); }
+cg-board square.hl-mistake { background-color: rgba(229,130,43,0.42); }
+cg-board square.hl-mistake.hl-from { background-color: rgba(229,130,43,0.2); }
+cg-board square.hl-miss { background-color: rgba(217,87,122,0.42); }
+cg-board square.hl-miss.hl-from { background-color: rgba(217,87,122,0.2); }
+cg-board square.hl-blunder { background-color: rgba(207,58,47,0.42); }
+cg-board square.hl-blunder.hl-from { background-color: rgba(207,58,47,0.2); }
+
+@media (max-width: 860px) {
+  .rs-key-cols { grid-template-columns: 1fr; }
+  .rs-close { float: none; margin: 0 0 8px; }
+}
+
 /* move list */
 .moves { position: relative; max-height: 300px; overflow-y: auto; font-variant-numeric: tabular-nums; }
 .move-row { display: grid; grid-template-columns: 36px 1fr 1fr; align-items: center; }

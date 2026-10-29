@@ -6,13 +6,14 @@ import { Chess, type Color } from 'chess.js';
 import { gamePhase } from '../coach/facts';
 import { buildGameReview } from '../coach/gameReview';
 import type { ExplanationProvider } from '../coach/provider';
-import { scoreMove, terminalScore } from '../coach/review';
+import { reviewPly, terminalScore } from '../coach/review';
 import { REVIEW_CONFIG, type AnalysisPreset } from '../config/review';
 import type { Analysis, SearchOptions } from '../engine/uci';
 import type { PlyRecord } from '../types';
-import { BAD_CLASSES } from '../ui/walkthrough';
+import { BAD_CLASSES } from '../coach/classes';
 import { cacheUsable, type KeyValueStore } from './cache';
-import { identifyOpening, type OpeningBook } from './openings';
+import { bookPrefix, identifyOpening, type OpeningBook } from './openings';
+import { migrateAnalysis } from './migrate';
 import { timeSpent, type ImportedGame } from './pgn';
 import type { GameAnalysis, MoveAnalysis } from './types';
 
@@ -39,44 +40,49 @@ export async function analyzeGame(
   book: OpeningBook | null,
   control: Control,
   onProgress: (done: number, total: number) => void,
+  /** Called as soon as each move is classified, so it can be stepped through before the game is done. */
+  onMove: (moves: MoveAnalysis[]) => void = () => {},
 ): Promise<GameAnalysis | null> {
   const plies = toPlies(game, userColor);
   const fens = [game.startFen, ...game.moves.map((m) => m.fenAfter)];
+  const inBook = book ? bookPrefix(book, game.moves) : 0;
+  const spent = timeSpent(game);
   const analyses: (Analysis | null)[] = [];
+  const moves: MoveAnalysis[] = [];
   for (let i = 0; i < fens.length; i++) {
     await control.waitIfPaused();
     if (control.cancelled()) return null;
     const terminal = i > 0 && terminalScore(fens[i]) !== null;
     analyses.push(terminal ? null : await analyze(fens[i], { depth: preset.depth, multiPv: preset.multiPv }));
-    onProgress(i + 1, fens.length);
-  }
-
-  const spent = timeSpent(game);
-  const moves: MoveAnalysis[] = [];
-  for (let i = 0; i < plies.length; i++) {
-    const ply = plies[i];
-    const before = analyses[i]!;
-    const after = analyses[i + 1];
-    const n = scoreMove(ply, before, after);
-    const second = before.lines[1];
-    const prevClock = i >= 2 ? game.moves[i - 2].clock : game.timeControl?.base ?? null;
-    const m: MoveAnalysis = {
-      evalBefore: n.evalBefore,
-      evalAfter: n.evalAfter,
-      cpLoss: n.cpLoss,
-      classification: n.classification,
-      bestUci: n.bestUci,
-      bestSan: n.bestSan,
-      gap: second ? n.bestCp - second.cp : null,
-      bestLine: before.lines[0]?.pv.slice(0, 8) ?? [],
-      phase: gamePhase(new Chess(ply.fenBefore)),
-      clockBefore: game.hasClocks ? prevClock : null,
-      spent: spent[i],
-    };
-    if (ply.by === 'user' && BAD_CLASSES.includes(n.classification)) {
-      m.explanation = await provider.explain({ ply, prev: plies[i - 1] ?? null, userColor, before, after, numbers: n });
+    if (i > 0) {
+      // Positions i−1 and i are known, so move i−1 can be classified now.
+      const k = i - 1;
+      const ply = plies[k];
+      const before = analyses[k]!;
+      const { review, numbers } = await reviewPly(ply, plies[k - 1] ?? null, before, analyses[i], {
+        userColor, inBook: k < inBook, provider, analyze,
+        // Only your weaker moves get a stored explanation; the review screen describes the rest on the fly.
+        explain: (cls) => ply.by === 'user' && BAD_CLASSES.includes(cls),
+      });
+      const prevClock = k >= 2 ? game.moves[k - 2].clock : game.timeControl?.base ?? null;
+      moves.push({
+        evalBefore: review.evalBefore,
+        evalAfter: review.evalAfter,
+        cpLoss: review.cpLoss,
+        winDrop: review.winDrop ?? 0,
+        classification: review.classification,
+        bestUci: review.bestUci,
+        bestSan: review.bestSan,
+        gap: numbers.secondCp === null ? null : numbers.bestCp - numbers.secondCp,
+        bestLine: before.lines[0]?.pv.slice(0, 8) ?? [],
+        phase: gamePhase(new Chess(ply.fenBefore)),
+        clockBefore: game.hasClocks ? prevClock : null,
+        spent: spent[k],
+        ...(review.explanation.headline || review.explanation.details.length ? { explanation: review.explanation } : {}),
+      });
+      onMove(moves);
     }
-    moves.push(m);
+    onProgress(i + 1, fens.length);
   }
 
   const result: GameAnalysis = {
@@ -97,7 +103,7 @@ export async function analyzeGame(
 }
 
 /** PlyRecords with the cached analysis attached as reviews, so the existing review code can run on them. */
-export function withReviews(plies: PlyRecord[], a: GameAnalysis): PlyRecord[] {
+export function withReviews(plies: PlyRecord[], a: Pick<GameAnalysis, 'moves'>): PlyRecord[] {
   return plies.map((p, i) => {
     const m = a.moves[i];
     if (!m) return p;
@@ -106,6 +112,8 @@ export function withReviews(plies: PlyRecord[], a: GameAnalysis): PlyRecord[] {
       review: {
         classification: m.classification,
         cpLoss: m.cpLoss,
+        winDrop: m.winDrop,
+        model: 2,
         evalBefore: m.evalBefore,
         evalAfter: m.evalAfter,
         bestUci: m.bestUci,
@@ -137,6 +145,8 @@ export interface QueueDeps {
   book: () => Promise<OpeningBook | null>;
   onChange: () => void;
   onAnalyzed: (a: GameAnalysis) => void;
+  /** Moves classified so far for a game still being analyzed. */
+  onPartial?: (url: string, moves: MoveAnalysis[]) => void;
 }
 
 /** Analyzes queued games one after another, most recent first. Pausable and cancellable. */
@@ -204,7 +214,11 @@ export class AnalysisQueue {
           continue;
         }
         const token = this.cancelToken;
-        const cached = await this.deps.store.get(job.url);
+        let cached = await this.deps.store.get(job.url);
+        if (cached && cached.version < REVIEW_CONFIG.analysisVersion) {
+          cached = migrateAnalysis(cached, item.game, await this.deps.book().catch(() => null));
+          await this.deps.store.put(job.url, cached).catch(() => {});
+        }
         if (cacheUsable(cached, item.preset.depth, REVIEW_CONFIG.analysisVersion)) {
           job.status = 'cached';
           this.pending.delete(job.url);
@@ -231,6 +245,7 @@ export class AnalysisQueue {
               job.total = total;
               this.deps.onChange();
             },
+            (moves) => this.deps.onPartial?.(job.url, moves),
           );
           this.pending.delete(job.url);
           if (!result) {

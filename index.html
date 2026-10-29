@@ -31,6 +31,7 @@
           </div>
           <div id="bar-bottom" class="player-bar"></div>
         </div>
+        <div id="coach-line" class="coach-line" aria-live="polite" hidden></div>
         <nav class="nav" aria-label="Move navigation">
           <button type="button" class="btn icon" id="nav-first" title="First position (Home)" aria-label="First position">⏮</button>
           <button type="button" class="btn icon" id="nav-prev" title="Previous move (←)" aria-label="Previous move">◀</button>
@@ -78,8 +79,6 @@
           </div>
         </section>
 
-        <section class="card walk-card" id="walkthrough" aria-label="Move-by-move review" aria-live="polite" hidden></section>
-
         <section class="card review-card" id="review" aria-label="Game review" hidden></section>
 
         <section class="card explain" id="coach-card" aria-label="Coach" aria-live="polite">
@@ -92,7 +91,7 @@
           <div id="tips"></div>
         </section>
 
-        <section class="card moves-card" aria-label="Moves">
+        <section class="card moves-card" id="moves-card" aria-label="Moves">
           <h2>Moves</h2>
           <div id="moves" class="moves"></div>
         </section>
@@ -128,6 +127,7 @@
         <div class="dialog-actions">
           <button type="submit" value="cancel" class="btn">Not now</button>
           <button type="submit" value="summary" class="btn">Just the summary</button>
+          <button type="submit" value="key" class="btn">Jump to key moments</button>
           <button type="submit" value="walk" class="btn primary">Go through it move by move</button>
         </div>
       </form>

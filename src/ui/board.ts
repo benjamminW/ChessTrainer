@@ -2,7 +2,8 @@ import { Chessground } from 'chessground';
 import type { Api } from 'chessground/api';
 import type { DrawShape } from 'chessground/draw';
 import type { Key } from 'chessground/types';
-import type { Color } from '../types';
+import type { Classification, Color } from '../types';
+import { boardBadgeSvg } from './classIcons';
 
 export interface BoardView {
   fen: string;
@@ -15,6 +16,10 @@ export interface BoardView {
   check: boolean;
   /** Arrows (from → to) or circles (no `to`). */
   shapes: { from: string; to?: string; brush: string }[];
+  /** Move-class badge drawn in the corner of a square (the destination of the move being reviewed). */
+  badge?: { square: string; cls: Classification } | null;
+  /** Extra CSS classes for squares, e.g. a class-colored highlight. */
+  squareClasses?: Map<string, string>;
 }
 
 const cgColor = (c: Color) => (c === 'w' ? 'white' : 'black');
@@ -41,6 +46,7 @@ export class Board {
       dest: s.to ? (s.to as Key) : undefined,
       brush: s.brush,
     }));
+    if (v.badge) shapes.push({ orig: v.badge.square as Key, customSvg: { html: boardBadgeSvg(v.badge.cls), center: 'orig' } });
     this.cg.set({
       fen: v.fen.split(' ')[0],
       orientation: cgColor(v.orientation),
@@ -52,6 +58,7 @@ export class Board {
         dests: v.dests as Map<Key, Key[]>,
       },
       drawable: { autoShapes: shapes },
+      highlight: { lastMove: true, check: true, custom: (v.squareClasses ?? new Map()) as Map<Key, string> },
     });
     if (!v.lastMove) this.cg.state.lastMove = undefined;
   }

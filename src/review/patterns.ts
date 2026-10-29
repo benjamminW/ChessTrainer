@@ -3,6 +3,7 @@
  * anything with fewer than REVIEW_CONFIG.minSample instances is flagged as too small to call.
  */
 import type { Phase } from '../coach/facts';
+import { BAD_CLASSES } from '../coach/classes';
 import { REVIEW_CONFIG } from '../config/review';
 import type { Color } from '../types';
 import type { ChessComGame } from './chesscom';
@@ -151,7 +152,7 @@ export function computePatterns(entries: PatternEntry[], minSample = REVIEW_CONF
   for (const e of entries) {
     for (const { m, index } of myMoves(e)) {
       phaseLoss.set(m.phase, [...(phaseLoss.get(m.phase) ?? []), m.cpLoss]);
-      if (['Inaccuracy', 'Mistake', 'Blunder'].includes(m.classification)) {
+      if (BAD_CLASSES.includes(m.classification)) {
         errors++;
         for (const k of m.explanation?.kinds ?? []) kindRefs.set(k, [...(kindRefs.get(k) ?? []), { url: e.game.url, index, label: refLabel(e, index) }]);
       }
@@ -209,7 +210,7 @@ function weaknesses(p: Patterns, entries: PatternEntry[], minSample: number): We
     const errs: { ref: Ref; loss: number }[] = [];
     for (const e of entries) {
       for (const { m, index } of myMoves(e)) {
-        if (m.phase === worst.phase && ['Inaccuracy', 'Mistake', 'Blunder'].includes(m.classification)) errs.push({ ref: { url: e.game.url, index, label: refLabel(e, index) }, loss: m.cpLoss });
+        if (m.phase === worst.phase && BAD_CLASSES.includes(m.classification)) errs.push({ ref: { url: e.game.url, index, label: refLabel(e, index) }, loss: m.cpLoss });
       }
     }
     out.push({

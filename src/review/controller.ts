@@ -9,8 +9,10 @@ import type { Analysis, SearchOptions } from '../engine/uci';
 import { read, write } from '../game/persistence';
 import type { Puzzle } from '../puzzles/types';
 import type { BoardView } from '../ui/board';
-import { BAD_CLASSES } from '../ui/walkthrough';
-import { AnalysisQueue } from './analyzer';
+import { AnalysisQueue, toPlies, withReviews } from './analyzer';
+import { migrateAnalysis } from './migrate';
+import { ReviewScreen, type ReviewModel } from '../reviewScreen/controller';
+import { pickPromotion } from '../ui/promotion';
 import { cacheUsable, openStores, type ReviewStores } from './cache';
 import { ChessComClient, ChessComError, archiveMonth, isPastMonth, type ChessComGame } from './chesscom';
 import { summarizeGame, type GameSummary } from './gameStats';
@@ -18,7 +20,7 @@ import { identifyOpening, loadBook, type OpeningBook, type OpeningInfo } from '.
 import { computePatterns, userResult, type Patterns, type Ref, type UserResult } from './patterns';
 import { importChessComGame, type ImportedGame } from './pgn';
 import { mistakeToPuzzle } from './toPuzzle';
-import type { GameAnalysis } from './types';
+import type { GameAnalysis, MoveAnalysis } from './types';
 
 const KEY = 'chess-coach:review:v1';
 
@@ -55,6 +57,9 @@ export interface ReviewDeps {
   /** Add a puzzle to Puzzle mode's "My mistakes" set. Returns false if it was already there. */
   savePuzzle(p: Puzzle, from: { label: string; url: string }): boolean;
   hasPuzzle(id: string): boolean;
+  /** The app's cached coach analysis (for the review screen's retry, best line and engine lines). */
+  coachAnalyze(fen: string): Promise<Analysis>;
+  resolved(fen: string): Analysis | undefined;
 }
 
 export interface OpenGame {
@@ -62,12 +67,12 @@ export interface OpenGame {
   imported: ImportedGame;
   userColor: Color;
   analysis: GameAnalysis | null;
+  /** Moves classified so far while the game is still being analyzed. */
+  partial: MoveAnalysis[] | null;
   summary: GameSummary | null;
   opening: OpeningInfo | null;
-  /** Plies applied on the board (0 = start). */
-  step: number;
-  /** Show the position before your move with the better-move arrows. */
-  showBetter: boolean;
+  /** The shared review screen (stepping, retry, key moments…). */
+  screen: ReviewScreen;
 }
 
 export type ReviewView = 'games' | 'game' | 'patterns';
@@ -88,6 +93,8 @@ export class ReviewMode {
   private client = new ChessComClient();
   private book: OpeningBook | null = null;
   private loadToken = 0;
+  /** Bumped whenever the open game's analysis changes, so the screen recomputes its summary. */
+  private revision = 0;
 
   constructor(private deps: ReviewDeps) {
     this.prefs = { ...DEFAULT_PREFS, ...read<Partial<ReviewPrefs>>(KEY) };
@@ -101,6 +108,13 @@ export class ReviewMode {
       onAnalyzed: (a) => {
         this.analyses.set(a.url, a);
         if (this.current?.game.url === a.url) this.attach(this.current, a);
+        deps.requestRender();
+      },
+      onPartial: (url, moves) => {
+        const og = this.current;
+        if (og?.game.url !== url) return;
+        og.partial = [...moves];
+        this.revision++;
         deps.requestRender();
       },
     });
@@ -193,8 +207,13 @@ export class ReviewMode {
     const chess = games.filter((g) => g.rules === 'chess' && g.pgn).sort((a, b) => b.end_time - a.end_time);
     this.games.push(...chess);
     for (const g of chess) {
-      const a = await this.stores.analyses.get(g.url).catch(() => undefined);
-      if (a && a.version === REVIEW_CONFIG.analysisVersion) this.analyses.set(g.url, a);
+      let a = await this.stores.analyses.get(g.url).catch(() => undefined);
+      if (a && a.version < REVIEW_CONFIG.analysisVersion) {
+        // Older analyses are migrated to the current classes, not thrown away.
+        a = migrateAnalysis(a, importChessComGame(g), await this.getBook().catch(() => null));
+        await this.stores.analyses.put(g.url, a).catch(() => {});
+      }
+      if (a) this.analyses.set(g.url, a);
     }
     this.deps.requestRender();
   }
@@ -297,15 +316,24 @@ export class ReviewMode {
 
   // ------------------------------------------------------------ single game
 
+  get screen(): ReviewScreen | null {
+    return this.current?.screen ?? null;
+  }
+
   openGame(url: string, step?: number): void {
     const game = this.games.find((g) => g.url === url);
     if (!game) return;
     const imported = importChessComGame(game);
-    const og: OpenGame = { game, imported, userColor: this.userColorIn(game), analysis: null, summary: null, opening: null, step: 0, showBetter: false };
+    const og = { game, imported, userColor: this.userColorIn(game), analysis: null, partial: null, summary: null, opening: null } as unknown as OpenGame;
+    og.screen = new ReviewScreen(this.model(og), {
+      analyze: (fen) => this.deps.coachAnalyze(fen),
+      resolved: (fen) => this.deps.resolved(fen),
+      requestRender: () => this.deps.requestRender(),
+    });
     this.attach(og, this.analyses.get(url) ?? null);
     this.current = og;
     this.view = 'game';
-    this.goTo(step ?? 0);
+    og.screen.goTo(step ?? 0);
     this.getBook().then(
       (b) => {
         if (this.current === og) {
@@ -317,44 +345,60 @@ export class ReviewMode {
     );
   }
 
-  /** Jump to an example position from the patterns screen: the position with your move, better move shown. */
+  /** Jump to an example position from the patterns screen, with the better move shown. */
   openRef(ref: Ref): void {
-    this.openGame(ref.url, ref.index + 1);
-    if (this.current && ref.index > 0) this.showMoment(ref.index);
+    this.openGame(ref.url);
+    this.current?.screen.showMoment(ref.index);
   }
 
   private attach(og: OpenGame, a: GameAnalysis | null): void {
     og.analysis = a;
+    if (a) og.partial = null;
     og.summary = a ? summarizeGame(og.imported, a) : null;
     if (this.book) og.opening = identifyOpening(this.book, og.imported.moves);
+    this.revision++;
   }
 
-  goTo(step: number): void {
-    const og = this.current;
-    if (!og) return;
-    og.step = Math.max(0, Math.min(og.imported.moves.length, step));
-    og.showBetter = false;
-    this.deps.requestRender();
+  /** The open game as a review-screen model (finished analysis, or what's analyzed so far). */
+  model(og: OpenGame): ReviewModel {
+    const g = og.game;
+    const moves = og.analysis?.moves ?? og.partial;
+    const plies = moves ? withReviews(toPlies(og.imported, og.userColor), { moves }) : toPlies(og.imported, og.userColor);
+    const job = this.queue.jobs.find((j) => j.url === g.url && (j.status === 'queued' || j.status === 'running'));
+    const me = og.userColor === 'w' ? 'white' : 'black';
+    const them = og.userColor === 'w' ? 'black' : 'white';
+    const deep = PRESETS.deep;
+    return {
+      meta: {
+        userColor: og.userColor,
+        white: { name: og.userColor === 'w' ? 'You' : g.white.username, rating: g.white.rating },
+        black: { name: og.userColor === 'b' ? 'You' : g.black.username, rating: g.black.rating },
+        resultText: resultText(g, og.userColor, og.imported.ending),
+        timeControl: timeControlLabel(g),
+        date: new Date(g.end_time * 1000).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }),
+        url: g.url,
+        opening: og.opening,
+        externalAccuracy: g.accuracies ? { you: g.accuracies[me], opponent: g.accuracies[them], source: 'Chess.com' } : null,
+      },
+      startFen: og.imported.startFen,
+      plies,
+      progress: job ? { done: job.done, total: job.total } : null,
+      revision: this.revision,
+      deeper: og.analysis && og.analysis.depth < deep.depth
+        ? { label: `Analyze deeper (depth ${deep.depth})`, running: !!job, run: () => this.queue.enqueue([{ game: og.imported, userColor: og.userColor, label: this.label(g) }], deep) }
+        : null,
+    };
   }
 
-  /** Show your move at `index` with the better move (position before it, arrows on). */
-  showMoment(index: number): void {
-    const og = this.current;
-    if (!og) return;
-    og.step = index + 1;
-    og.showBetter = this.isUserMistake(index);
-    this.deps.requestRender();
-  }
-
-  toggleBetter(): void {
-    if (this.current) this.current.showBetter = !this.current.showBetter;
-    this.deps.requestRender();
-  }
-
-  isUserMistake(index: number): boolean {
-    const og = this.current;
-    const m = og?.analysis?.moves[index];
-    return !!og && !!m && og.imported.moves[index].color === og.userColor && BAD_CLASSES.includes(m.classification);
+  /** Board moves (only used while retrying a move in the review). */
+  async onBoardMove(from: string, to: string, promotionHost: HTMLElement): Promise<void> {
+    const sc = this.screen;
+    if (!sc || sc.mode.kind !== 'retry') return this.deps.requestRender();
+    const fen = sc.currentFen();
+    const isPromo = new Chess(fen).moves({ verbose: true }).some((m) => m.from === from && m.to === to && m.promotion);
+    const promo = isPromo ? await pickPromotion(promotionHost, new Chess(fen).turn()) : undefined;
+    if (promo === null) return this.deps.requestRender();
+    return sc.onBoardMove(from, to, promo);
   }
 
   playFrom(index: number): void {
@@ -404,30 +448,23 @@ export class ReviewMode {
     if (!og) {
       return { fen: new Chess().fen(), orientation: 'w', turn: 'w', movable: null, dests: new Map(), lastMove: null, check: false, shapes: [], evalCp: null, showEval: false };
     }
-    const moves = og.imported.moves;
-    const i = og.step - 1;
-    const m = i >= 0 ? moves[i] : null;
-    const a = i >= 0 ? og.analysis?.moves[i] : undefined;
-    const better = og.showBetter && m && a?.bestUci && this.isUserMistake(i);
-    const fen = better ? m!.fenBefore : m ? m.fenAfter : og.imported.startFen;
-    const shapes: BoardView['shapes'] = better
-      ? [
-          { from: a!.bestUci!.slice(0, 2), to: a!.bestUci!.slice(2, 4), brush: 'green' },
-          { from: m!.uci.slice(0, 2), to: m!.uci.slice(2, 4), brush: 'paleRed' },
-        ]
-      : [];
-    const chess = new Chess(fen);
-    return {
-      fen,
-      orientation: og.userColor,
-      turn: chess.turn(),
-      movable: null,
-      dests: new Map(),
-      lastMove: better || !m ? null : [m.uci.slice(0, 2), m.uci.slice(2, 4)],
-      check: chess.inCheck(),
-      shapes,
-      evalCp: og.analysis ? (i < 0 ? og.analysis.moves[0]?.evalBefore ?? 0 : better ? a!.evalBefore : og.analysis.moves[i].evalAfter) : null,
-      showEval: !!og.analysis && this.view === 'game',
-    };
+    og.screen.setModel(this.model(og));
+    const v = og.screen.boardView();
+    return { ...v, showEval: this.view === 'game' && !!(og.analysis || og.partial) };
   }
+}
+
+const ENDINGS: Record<string, string> = { checkmate: 'by checkmate', resignation: 'by resignation', timeout: 'on time', abandoned: 'by abandonment' };
+
+function resultText(g: ChessComGame, user: Color, ending: string): string {
+  const r = userResult(g, user);
+  const how = ENDINGS[ending] ?? '';
+  return r === 'win' ? `You won ${how}.` : r === 'loss' ? `You lost ${how}.` : 'Draw.';
+}
+
+export function timeControlLabel(g: ChessComGame): string {
+  if (g.time_class === 'daily') return 'Daily';
+  const [base, inc] = g.time_control.split('+').map(Number);
+  const min = base >= 60 ? `${Math.round(base / 60)}` : `${base}s`;
+  return `${g.time_class[0].toUpperCase()}${g.time_class.slice(1)} ${min}${inc ? `+${inc}` : ''}`;
 }

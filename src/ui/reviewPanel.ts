@@ -1,25 +1,16 @@
-import { CLASSES, label as plyLabel } from '../coach/gameReview';
-import { formatEval } from '../coach/format';
+import { label as plyLabel } from '../coach/gameReview';
 import { PRESETS, REVIEW_CONFIG } from '../config/review';
+import type { Analysis } from '../engine/uci';
 import type { ChessComGame } from '../review/chesscom';
-import type { OpenGame, ReviewMode } from '../review/controller';
+import { timeControlLabel as timeControl, type OpenGame, type ReviewMode } from '../review/controller';
 import { MISTAKE_LABELS, userResult, type Record3, type Ref } from '../review/patterns';
-import type { Classification } from '../types';
-import { classSlug, h } from './panel';
-import { evalGraph } from './reviewCard';
+import { renderReviewScreen } from '../reviewScreen/view';
+import { h } from './panel';
 
 const pct = (x: number | null) => (x === null ? '–' : `${Math.round(x)}%`);
 const cp = (x: number | null) => (x === null ? '–' : String(Math.round(x)));
 const colorName = (c: string) => (c === 'w' ? 'White' : 'Black');
 const date = (sec: number) => new Date(sec * 1000).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-const SHORT: Record<Classification, string> = { Best: 'Best', Good: 'Good', Inaccuracy: 'Inacc.', Mistake: 'Mistake', Blunder: 'Blunder' };
-
-function timeControl(g: ChessComGame): string {
-  if (g.time_class === 'daily') return 'Daily';
-  const [base, inc] = g.time_control.split('+').map(Number);
-  const min = base >= 60 ? `${Math.round(base / 60)}` : `${base}s`;
-  return `${g.time_class[0].toUpperCase()}${g.time_class.slice(1)} ${min}${inc ? `+${inc}` : ''}`;
-}
 
 function select<T extends string>(labelText: string, value: T, options: [T, string][], onChange: (v: T) => void): HTMLElement {
   const s = h('select', { 'aria-label': labelText }) as HTMLSelectElement;
@@ -167,148 +158,44 @@ function refLink(m: ReviewMode, r: Ref): HTMLElement {
   return h('button', { type: 'button', class: 'link', onclick: () => m.openRef(r) }, r.label);
 }
 
-function resultLine(og: OpenGame): string {
-  const r = userResult(og.game, og.userColor);
-  const ending = og.imported.ending;
-  const how = ending === 'checkmate' ? 'by checkmate' : ending === 'resignation' ? 'by resignation' : ending === 'timeout' ? 'on time' : ending === 'abandoned' ? 'by abandonment' : '';
-  return r === 'win' ? `You won ${how}` : r === 'loss' ? `You lost ${how}` : 'Draw';
-}
-
-function stepInfo(m: ReviewMode, og: OpenGame): HTMLElement {
-  const i = og.step - 1;
-  const box = h('div', { class: 'rv-step' });
-  const nav = h('div', { class: 'controls' },
-    h('button', { type: 'button', class: 'btn small', onclick: () => m.goTo(0), disabled: og.step === 0, 'aria-label': 'Start' }, '⏮'),
-    h('button', { type: 'button', class: 'btn small', onclick: () => m.goTo(og.step - 1), disabled: og.step === 0, 'aria-label': 'Previous move' }, '◀'),
-    h('button', { type: 'button', class: 'btn small', onclick: () => m.goTo(og.step + 1), disabled: og.step >= og.imported.moves.length, 'aria-label': 'Next move' }, '▶'),
-    h('button', { type: 'button', class: 'btn small', onclick: () => m.goTo(og.imported.moves.length), disabled: og.step >= og.imported.moves.length, 'aria-label': 'End' }, '⏭'),
-  );
-  box.append(nav);
-  if (i < 0) {
-    box.append(h('p', { class: 'muted small' }, 'Start position. Use ◀ ▶ or the arrow keys to step through, or click the graph.'));
-    return box;
-  }
-  const mv = og.imported.moves[i];
-  const a = og.analysis?.moves[i];
-  const head = h('div', { class: 'explain-head' }, h('span', { class: 'explain-move' }, plyLabel({ ...mv, by: 'user' })), h('span', { class: 'who' }, mv.color === og.userColor ? 'You' : 'Opponent'));
-  if (a) head.append(h('span', { class: `badge cls-${classSlug(a.classification)}` }, a.classification), h('span', { class: 'eval' }, formatEval(a.evalAfter)));
-  if (a?.spent != null) head.append(h('span', { class: 'muted small' }, `${a.spent}s`));
-  box.append(head);
-  if (a && m.isUserMistake(i)) {
-    box.append(h('p', { class: 'walk-better' }, `Better was ${a.bestSan} (${formatEval(a.evalBefore)}).`));
-    const e = a.explanation;
-    if (e?.details.length) box.append(h('ul', { class: 'details' }, ...e.details.map((d) => h('li', {}, d))));
-    box.append(h('button', { type: 'button', class: 'btn small', onclick: () => m.toggleBetter(), 'aria-pressed': og.showBetter ? 'true' : 'false' }, og.showBetter ? 'Show the game position' : 'Show the better move'));
-  }
-  return box;
-}
-
-function accuracyTable(og: OpenGame): HTMLElement {
-  const s = og.summary!;
-  const opp = og.userColor === 'w' ? 'b' : 'w';
-  const row = (name: string, side: 'w' | 'b') => {
-    const st = s.review.stats[side];
-    return h('tr', {},
-      h('th', { scope: 'row' }, name),
-      h('td', { class: 'acc' }, pct(st.accuracy)),
-      ...CLASSES.map((c) => h('td', { class: st.counts[c] ? `cnt cls-${classSlug(c)}` : 'cnt zero' }, String(st.counts[c]))),
-      h('td', {}, cp(st.acpl)),
-    );
-  };
-  return h('table', { class: 'review-table' },
-    h('thead', {}, h('tr', {}, h('th', {}, ''), h('th', {}, 'Accuracy'), ...CLASSES.map((c) => h('th', { title: c }, SHORT[c])), h('th', { title: 'Average centipawn loss' }, 'ACPL'))),
-    h('tbody', {}, row('You', og.userColor), row('Opponent', opp)),
-  );
-}
-
-function gameView(m: ReviewMode): Element[] {
-  const og = m.current!;
+/** Review-mode extras around the shared review screen: back link, analysis button, clock use. */
+function gameExtras(m: ReviewMode, og: OpenGame): { before: HTMLElement[]; extras: HTMLElement[] } {
   const g = og.game;
-  const me = og.userColor === 'w' ? g.white : g.black;
   const opp = og.userColor === 'w' ? g.black : g.white;
-  const out: Element[] = [
+  const before: HTMLElement[] = [
     h('button', { type: 'button', class: 'link', onclick: () => m.back() }, '← All games'),
-    h('h3', { class: 'rv-title' }, `You (${colorName(og.userColor)}, ${me.rating}) vs ${opp.username} (${opp.rating})`),
-    h('p', { class: 'small' }, `${resultLine(og)} · ${timeControl(g)} · ${date(g.end_time)} · `, h('a', { href: g.url, target: '_blank', rel: 'noopener' }, 'View on Chess.com')),
+    h('h3', { class: 'rv-title' }, `You (${colorName(og.userColor)}) vs ${opp.username}`),
   ];
-  if (og.opening) {
-    const o = og.opening;
-    const left = o.leftAt === null ? 'The whole game stayed in known theory.'
-      : `${o.leftBy === og.userColor ? 'You' : 'Your opponent'} left theory with ${plyLabel({ ...og.imported.moves[o.leftAt], by: 'user' })}${o.bookMoves.length ? `; book move${o.bookMoves.length > 1 ? 's' : ''}: ${o.bookMoves.join(', ')}` : ''}.`;
-    out.push(h('p', { class: 'small' }, h('strong', {}, `${o.name} (${o.eco}). `), left));
-  }
-
   const job = m.queue.jobs.find((j) => j.url === g.url && (j.status === 'queued' || j.status === 'running'));
-  if (!og.summary) {
-    out.push(
-      job
-        ? h('p', { class: 'muted' }, job.status === 'running' ? `Analyzing… position ${job.done} of ${job.total}` : 'Queued for analysis…')
-        : h('div', {}, h('p', { class: 'muted' }, 'This game has not been analyzed yet.'), h('button', { type: 'button', class: 'btn primary', onclick: () => m.analyze([g]) }, 'Analyze this game')),
-    );
-    out.push(stepInfo(m, og));
-    return out;
+  if (!og.analysis && !og.partial && !job) {
+    before.push(h('div', { class: 'rv-step' }, h('p', { class: 'small' }, 'This game has not been analyzed yet.'), h('button', { type: 'button', class: 'btn primary small', onclick: () => m.analyze([g]) }, 'Analyze this game')));
   }
-  const s = og.summary;
-  out.push(accuracyTable(og));
-  out.push(h('p', { class: 'muted small' },
-    'Accuracy uses the formula in the README (win-chance based, like Lichess), so it will not match Chess.com’s number.',
-    g.accuracies ? ` Chess.com’s own figures for this game: you ${g.accuracies[og.userColor === 'w' ? 'white' : 'black']}, opponent ${g.accuracies[og.userColor === 'w' ? 'black' : 'white']}.` : ''));
-  out.push(evalGraph({ review: s.review, cursor: og.step, onSeek: (n) => m.goTo(n), marks: s.swings }));
-  out.push(stepInfo(m, og));
-
-  out.push(h('h3', {}, 'Key moments'));
-  if (!s.keyMoments.length) out.push(h('p', { class: 'muted' }, 'No inaccuracies, mistakes or blunders from you in this game.'));
-  else if (s.keyMoments.length < REVIEW_CONFIG.keyMoments.min) out.push(h('p', { class: 'muted small' }, `Only ${s.keyMoments.length} move${s.keyMoments.length === 1 ? '' : 's'} of yours lost ground in this game.`));
-  out.push(
-    h('ol', { class: 'moments' },
-      ...s.keyMoments.map((k) => {
-        const canPuzzle = !!m.puzzleFor(k.index);
-        const saved = m.isSaved(k.index);
-        return h('li', { class: 'moment' },
-          h('div', { class: 'moment-head' },
-            h('span', { class: 'explain-move' }, plyLabel(k.ply)),
-            h('span', { class: `badge cls-${classSlug(k.classification)}` }, k.classification),
-            h('span', { class: 'muted small' }, `−${Math.round(k.winDrop)}% win chance`),
-            k.missedChance ? h('span', { class: 'tag tag-missed' }, 'Missed chance') : null),
-          k.bestSan ? h('p', { class: 'moment-better' }, `Better was ${k.bestSan} (${k.bestEval}).`) : null,
-          h('p', { class: 'moment-reason' }, k.reason),
-          k.tip ? h('p', { class: 'moment-tip' }, h('span', { class: 'lesson-label' }, 'Tip'), k.tip) : null,
-          h('div', { class: 'moment-actions' },
-            h('button', { type: 'button', class: 'btn small', onclick: () => m.showMoment(k.index) }, 'Show on board'),
-            h('button', { type: 'button', class: 'btn small', onclick: () => m.playFrom(k.index) }, 'Play from here'),
-            h('button', { type: 'button', class: 'btn small', onclick: () => m.saveAsPuzzle(k.index), disabled: !canPuzzle || saved, title: canPuzzle ? '' : 'Needs an opponent move before it' }, saved ? 'Saved as puzzle ✓' : 'Save as puzzle'),
-          ),
-        );
-      }),
-    ),
-  );
-  if (s.goodMoments.length) {
-    out.push(h('h3', {}, 'Where you played well'));
-    out.push(h('ul', { class: 'rv-good' }, ...s.goodMoments.map((gm) =>
-      h('li', {}, h('button', { type: 'button', class: 'link', onclick: () => m.goTo(gm.index + 1) }, plyLabel({ ...og.imported.moves[gm.index], by: 'user' })),
-        ` found the only good move (${(Math.min(gm.gap, 1000) / 100).toFixed(1)} pawns better than the next best). ${gm.idea}`))));
-  }
-
-  out.push(h('h3', {}, 'By phase'));
-  out.push(h('div', { class: 'phases' }, ...s.review.phases.map((p) =>
-    h('div', { class: 'phase' }, h('span', { class: 'phase-name' }, p.phase[0].toUpperCase() + p.phase.slice(1)),
-      h('span', { class: 'phase-bar' }, h('span', { style: `width:${Math.round(p.accuracy ?? 0)}%` })),
-      h('span', { class: 'phase-acc', title: `${p.moves} moves, ${Math.round(p.acpl ?? 0)} centipawns lost per move` }, `${cp(p.acpl)} cp`)))));
-  out.push(h('p', { class: 'muted small' }, 'Bar = accuracy; number = your average centipawn loss per move in that phase.'));
-
-  if (s.time) {
-    const t = s.time;
-    out.push(h('h3', {}, 'Clock'));
-    const lines: (string | HTMLElement)[] = [];
-    if (t.troubleFrom !== null) lines.push(`You were in time trouble (under ${REVIEW_CONFIG.timeTroubleSec} s) from ${plyLabel({ ...og.imported.moves[t.troubleFrom], by: 'user' })}: ${t.troubleMoves} moves, ${t.troubleErrors} mistake${t.troubleErrors === 1 ? '' : 's'} or blunder${t.troubleErrors === 1 ? '' : 's'}.`);
-    else lines.push(`You were never under ${REVIEW_CONFIG.timeTroubleSec} s.`);
-    out.push(h('p', { class: 'small' }, ...lines));
+  const extras: HTMLElement[] = [];
+  const t = og.summary?.time;
+  if (t) {
+    const box = h('div', { class: 'rs-clock' }, h('h3', {}, 'Clock'));
+    box.append(h('p', { class: 'small' }, t.troubleFrom !== null
+      ? `You were in time trouble (under ${REVIEW_CONFIG.timeTroubleSec} s) from ${plyLabel({ ...og.imported.moves[t.troubleFrom], by: 'user' })}: ${t.troubleMoves} moves, ${t.troubleErrors} serious error${t.troubleErrors === 1 ? '' : 's'}.`
+      : `You were never under ${REVIEW_CONFIG.timeTroubleSec} s.`));
     if (t.longThinkErrors.length) {
-      out.push(h('p', { class: 'small' }, 'Long thinks that still went wrong: ',
-        ...t.longThinkErrors.flatMap((x, j) => [j ? ', ' : '', h('button', { type: 'button', class: 'link', onclick: () => m.showMoment(x.index) }, `${plyLabel({ ...og.imported.moves[x.index], by: 'user' })} (${Math.round(x.spent)} s)`)])));
+      box.append(h('p', { class: 'small' }, 'Long thinks that still went wrong: ',
+        ...t.longThinkErrors.flatMap((x, j) => [j ? ', ' : '', h('button', { type: 'button', class: 'link', onclick: () => og.screen.showMoment(x.index) }, `${plyLabel({ ...og.imported.moves[x.index], by: 'user' })} (${Math.round(x.spent)} s)`)])));
     }
+    extras.push(box);
   }
-  return out;
+  return { before, extras };
+}
+
+function momentActions(m: ReviewMode, og: OpenGame, index: number): (HTMLElement | null)[] {
+  if (!og.analysis) return [];
+  const canPuzzle = !!m.puzzleFor(index);
+  const saved = m.isSaved(index);
+  return [
+    h('button', { type: 'button', class: 'btn small', onclick: () => m.playFrom(index), title: 'Play this position against the coach' }, 'Play from here'),
+    og.screen.canShowBetter(index)
+      ? h('button', { type: 'button', class: 'btn small', onclick: () => m.saveAsPuzzle(index), disabled: !canPuzzle || saved, title: canPuzzle ? '' : 'Needs an opponent move before it' }, saved ? 'Saved ✓' : 'Save as puzzle')
+      : null,
+  ];
 }
 
 // ---------------------------------------------------------------- patterns
@@ -370,8 +257,15 @@ function patternsView(m: ReviewMode): HTMLElement[] {
 
 // ---------------------------------------------------------------- panel
 
-export function renderReviewPanel(el: HTMLElement, m: ReviewMode): void {
+export function renderReviewPanel(
+  el: HTMLElement,
+  m: ReviewMode,
+  coachLine: HTMLElement,
+  resolved: (fen: string) => Analysis | undefined,
+  requestAnalysis: (fen: string) => void,
+): void {
   el.replaceChildren();
+  coachLine.hidden = true;
   el.append(h('h2', {}, 'Review your Chess.com games'), usernameForm(m));
   if (m.error) el.append(h('p', { class: 'status bad' }, m.error));
   if (!m.prefs.username) {
@@ -387,7 +281,12 @@ export function renderReviewPanel(el: HTMLElement, m: ReviewMode): void {
     }, text);
     el.append(h('div', { class: 'pz-tabs rv-tabs' }, tab('games', 'Games'), tab('patterns', 'Patterns')));
     const body = h('div', { class: 'rv-body' });
-    body.append(...(m.view === 'game' && m.current ? gameView(m) : m.view === 'patterns' ? patternsView(m) : gamesView(m)));
+    const og = m.view === 'game' ? m.current : null;
+    if (og) {
+      const { before, extras } = gameExtras(m, og);
+      og.screen.setModel(m.model(og));
+      renderReviewScreen(body, coachLine, og.screen, resolved, requestAnalysis, { before, extras, momentActions: (i) => momentActions(m, og, i) });
+    } else body.append(...(m.view === 'patterns' ? patternsView(m) : gamesView(m)));
     el.append(body);
     el.append(
       h('div', { class: 'controls rv-privacy' },
