@@ -36,6 +36,7 @@ import {
   type ExplainView,
 } from './ui/panel';
 import { pickPromotion } from './ui/promotion';
+import { sounds } from './ui/sound';
 import { PuzzleMode } from './puzzles/controller';
 import { ReviewMode } from './review/controller';
 import { renderReviewPanel } from './ui/reviewPanel';
@@ -169,6 +170,7 @@ class App {
 
     this.bindUi();
     this.applyAppearance();
+    this.applySound();
     this.render();
     if (this.settings.mode === 'puzzles') this.puzzles.enter();
     else if (this.settings.mode === 'review') this.reviewMode.enter();
@@ -790,7 +792,46 @@ class App {
     renderPuzzlePanel($('puzzle-panel'), this.puzzles, resolved);
   }
 
+  /** Last seen state per mode, so a change (game over, right or wrong answer) plays its sound once. */
+  private soundState = new Map<string, string>();
+
+  /** Event sounds: compares each mode's state with the last render. Move sounds come from the board. */
+  eventSounds(): void {
+    const mode = this.settings.mode;
+    const seen = (key: string, value: string): string | null => {
+      const before = this.soundState.get(key) ?? null;
+      this.soundState.set(key, value);
+      return before;
+    };
+    const changed = (key: string, id: string, state: string): string | null => {
+      const before = seen(key, `${id}|${state}`);
+      return before !== null && before.startsWith(id + '|') && before !== `${id}|${state}` ? state : null;
+    };
+    if (mode === 'play') {
+      const st = this.session.state;
+      const over = this.session.result() ? 'over' : 'on';
+      const prev = seen('play', `${st.startedAt}|${over}`);
+      if (prev && !prev.startsWith(st.startedAt)) sounds.play('start');
+      else if (prev === `${st.startedAt}|on` && over === 'over') sounds.play('end');
+    } else if (mode === 'puzzles') {
+      const p = this.puzzles;
+      const now = changed('puzzle', p.puzzle?.id ?? '', p.phase);
+      // A solve chimes; finishing after Show solution doesn't.
+      if (now === 'done' && !p.failed) sounds.play('correct');
+      else if (now === 'wrong') sounds.play('wrong');
+    } else if (mode === 'learn') {
+      const l = this.learn;
+      const id = `${l.lesson?.id}|${l.index}`;
+      const t = changed('learn-try', id, l.tryState?.phase ?? '');
+      const pr = changed('learn-practice', id, l.practice?.phase ?? '');
+      const d = changed('learn-drill', id, `${l.drill?.phase ?? ''}:${l.drill?.misses ?? 0}`);
+      if (t === 'correct' || pr === 'done' || d?.startsWith('done')) sounds.play('correct');
+      else if (t === 'wrong' || pr === 'failed' || pr === 'flagged' || d?.startsWith('offbook')) sounds.play('wrong');
+    }
+  }
+
   render(): void {
+    this.eventSounds();
     const mode = this.settings.mode;
     document.body.classList.toggle('mode-puzzles', mode !== 'play');
     document.body.classList.toggle('mode-analysis', mode === 'analysis');
@@ -1022,6 +1063,19 @@ class App {
     $('mode-analysis').addEventListener('click', () => this.setMode('analysis'));
     $('mode-learn').addEventListener('click', () => this.setMode('learn'));
     $('btn-hint').addEventListener('click', () => this.requestHint());
+    // Browsers only start audio after a user gesture.
+    const unlock = () => sounds.unlock();
+    document.addEventListener('pointerdown', unlock, { capture: true });
+    document.addEventListener('keydown', unlock, { capture: true });
+    $('btn-sound').addEventListener('click', () => {
+      this.settings.sound = !this.settings.sound;
+      saveSettings(this.settings);
+      this.applySound();
+      if (this.settings.sound) {
+        sounds.unlock();
+        sounds.play('move');
+      }
+    });
     const build = $<HTMLSelectElement>('engine-build');
     build.value = this.settings.engine;
     build.addEventListener('change', async () => {
@@ -1181,6 +1235,14 @@ class App {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
+  applySound(): void {
+    sounds.enabled = this.settings.sound;
+    const b = $('btn-sound');
+    b.textContent = this.settings.sound ? '🔊' : '🔇';
+    b.setAttribute('aria-pressed', String(this.settings.sound));
+    b.title = this.settings.sound ? 'Sound on (click to mute)' : 'Sound off (click to turn on)';
+  }
+
   applyAppearance(): void {
     for (const b of BOARDS) document.body.classList.toggle(`board-${b.id}`, this.settings.boardTheme === b.id);
     for (const p of PIECE_SETS) document.body.classList.toggle(`pieces-${p.id}`, this.settings.pieceSet === p.id);
@@ -1202,7 +1264,7 @@ class App {
 
 const app = new App();
 // Dev server only (stripped from production builds): lets tests drive the app from the console.
-if (import.meta.env.DEV) (window as unknown as { __app: App }).__app = app;
+if (import.meta.env.DEV) Object.assign(window, { __app: app, __sounds: sounds });
 
 /** A finished game kept for Back to review (without its own practice link, so they don't nest). */
 function stripPractice(st: GameState): GameState {

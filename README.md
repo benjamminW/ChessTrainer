@@ -22,6 +22,7 @@ Play Stockfish at a strength from 400 to 2500 Elo, and get a plain-English expla
 - **Learn mode.** Lessons in three sections (Openings, Middlegame, Endgames) with progress tracking. Lessons explain a position, ask you to find a move, or have you play it out against the coach. Endgames are checked against the Lichess tablebase. See [Learn](#learn).
 - **Puzzle mode.** Switch between **Play** and **Puzzles** at the top. Puzzles come from the Lichess puzzle database and are served near your own puzzle rating (separate from the game strength setting), or from a band and theme you pick. Wrong moves are explained by the coach, with an arrow to the right move, and you can retry or see the solution. Failed puzzles come back in **Review mistakes**. See [Puzzles](#puzzles).
 - **Takebacks and branching.** Unlimited takebacks, with a counter. Click any move to review it, then either play a different move or press **Continue from here** on any earlier position to branch (you're asked to confirm first).
+- **Sound.** Move, capture, castling, check and promotion sounds on every board, plus sounds for game start and end and for right and wrong answers in Puzzles and Learn. They're synthesized in the browser (no audio files). The 🔊 button at the top mutes them, and the choice is saved.
 - **Piece counter.** Bars above and below the board show each player's captured pieces and the material lead (e.g. +3).
 - **Board and piece themes.** 13 boards: Brown, Green, Neon (glowing grid with a pulsing frame), Ocean, Walnut, Slate, Coral, Lavender, Midnight, Sakura, Sand, Emerald and Royal. 8 piece sets: Classic, Minimal, Neon, Metal (silver & gold), Toy (glossy blue & red), Pixel (8-bit), Tokens (coins) and Wood. Mix and match; the choice is remembered. See [Customising themes](#customising-themes).
 - **Standard game handling.** Checkmate, stalemate, threefold repetition, insufficient material and the 50-move rule are detected. Includes a promotion picker, PGN export with classification comments, and auto-save to `localStorage`.
@@ -412,6 +413,16 @@ node scripts/build-rating-calibration.mjs --month 2024-01 --bytes 261107712
 ```
 
 It downloads that many bytes of the month's file into `data/` (gitignored), needs `zstd` on the PATH, and writes `src/coach/ratingCalibration.json` (commit that file).
+
+### Sound
+
+`src/ui/sound.ts` makes every sound with the Web Audio API: short filtered-noise "knocks" for moves and soft sine or triangle tones for events. There are no audio files, so nothing extra to download and nothing borrowed from another site.
+- **Move sounds come from the board itself** (`Board.render`). When the shown position changes by a move, `moveSoundFor()` compares the piece placement before and after and plays move, capture (including en passant), castle, promote or check. So Play, Review stepping, Puzzles, Best move and Learn all sound the same.
+- **Event sounds** come from `App.eventSounds()`, which compares each mode's state with the last redraw:
+  - a new game starts, or a game ends;
+  - a puzzle is solved (but not after "Show solution") or a puzzle move is wrong;
+  - a Learn step is solved, or a move is wrong, flagged, off book or fails a Practice.
+- **Muting:** the 🔊/🔇 button at the top turns sound off (saved in the settings). Browsers only allow audio after your first click or key press, so the first sound plays after that.
 
 ### Hints and tips
 

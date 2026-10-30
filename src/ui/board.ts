@@ -4,6 +4,7 @@ import type { DrawShape } from 'chessground/draw';
 import type { Key } from 'chessground/types';
 import type { Classification, Color } from '../types';
 import { boardBadgeSvg } from './classIcons';
+import { moveSoundFor, sounds } from './sound';
 
 export interface BoardView {
   fen: string;
@@ -37,6 +38,8 @@ const cgColor = (c: Color) => (c === 'w' ? 'white' : 'black');
 export class Board {
   private cg: Api;
   private editing = false;
+  /** What was last drawn, to tell a new move apart from a plain redraw (for sounds). */
+  private shown: { placement: string; lastMove: string } | null = null;
 
   constructor(el: HTMLElement, onMove: (from: string, to: string) => void, edit: BoardEditEvents = {}) {
     this.cg = Chessground(el, {
@@ -66,6 +69,13 @@ export class Board {
     }));
     if (v.badge) shapes.push({ orig: v.badge.square as Key, customSvg: { html: boardBadgeSvg(v.badge.cls), center: 'orig' } });
     this.editing = !!v.editable;
+    const placement = v.fen.split(' ')[0];
+    const lastKey = v.lastMove ? v.lastMove.join('') : '';
+    if (!v.editable && this.shown && lastKey && lastKey !== this.shown.lastMove) {
+      const kind = moveSoundFor(this.shown.placement, placement, v.lastMove, v.check);
+      if (kind) sounds.play(kind);
+    }
+    this.shown = { placement, lastMove: lastKey };
     this.cg.set({
       fen: v.fen.split(' ')[0],
       orientation: cgColor(v.orientation),
