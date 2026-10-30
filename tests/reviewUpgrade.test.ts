@@ -211,7 +211,7 @@ describe('migration of saved reviews', () => {
       ],
     };
     const v2 = migrateAnalysis(v1, g, null);
-    expect(v2.version).toBe(2);
+    expect(v2.version).toBe(3);
     expect(v2.moves[0].classification).toBe('Great');
     expect(v2.moves[1].classification).toBe('Mistake'); // Black: 50% → 36.5%, a 13.5-point drop
     expect(migrateAnalysis(v1, g, buildBook([['C20', "King's Pawn Game", 'e2e4 e7e5']])).moves.map((m) => m.classification)).toEqual(['Book', 'Book']);

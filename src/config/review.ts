@@ -35,5 +35,5 @@ export const REVIEW_CONFIG = {
   /** A saved puzzle's solution stops after this many of your moves. */
   puzzleMaxMoves: 3,
   /** Bumped when the cached per-move data format changes; older entries are migrated (review/migrate.ts). */
-  analysisVersion: 2,
+  analysisVersion: 3,
 };

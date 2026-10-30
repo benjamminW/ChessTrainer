@@ -371,7 +371,11 @@ All thresholds are in `MOVE_CLASS` in `src/config/coach.ts`. Average centipawn l
 
 These are **this app's own estimates**. They will not match Chess.com's accuracy or game rating, which are proprietary; the review says so next to the numbers.
 
-- **Accuracy** per move is `103.1668 × e^(−0.04354 × drop) − 3.1669`, clamped to 0–100 (Lichess's formula), and a side's game accuracy is the plain average over its moves (Lichess also weights by volatility; this app doesn't).
+- **Accuracy** per move is `103.1668 × e^(−0.04354 × drop) − 3.1669`, clamped to 0–100 (Lichess's formula). A side's **game accuracy** follows Lichess's method (`gameAccuracy` in `src/coach/gameReview.ts`): the average of two means of the move accuracies.
+  - **A volatility-weighted mean:** each move is weighted by the spread of win% in a sliding window around it (window = moves ÷ 10, between 2 and 8; weights 0.5–12), so moves in sharp moments count more.
+  - **A harmonic mean:** a few bad moves pull the score down hard instead of being averaged away by many easy ones.
+
+  Earlier versions used a plain average, which let book moves and moves in already-decided positions (all near 100%) hide the mistakes. A game graded Poor in two phases could still show 80%+. Cached Review-mode analyses are recalculated automatically (analysis version 3); no engine work is needed. Unlike Lichess, this app doesn't add Lichess's +1 per-move "uncertainty bonus".
 - **Estimated game rating:** see [Estimated game rating](#estimated-game-rating) below.
 - **Phase grades** use the average drop per *counted* move in each phase (the same moves the rating counts, below): ≤ 2 Excellent, ≤ 4 Good, ≤ 7 Inaccurate, otherwise Poor. Phases: a position is an *endgame* when the pieces other than pawns and kings add up to 20 points or less (knight/bishop 3, rook 5, queen 9), or 26 or less with both queens off; otherwise it's the *opening* through move 10 and the *middlegame* after that. A phase that never happened is skipped.
 

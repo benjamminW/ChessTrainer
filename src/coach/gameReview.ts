@@ -22,10 +22,50 @@ export function moveAccuracy(winBefore: number, winAfter: number): number {
   return Math.max(0, Math.min(100, a));
 }
 
+/**
+ * Game accuracy for each side, following Lichess's published method (lila, AccuracyPercent.gameAccuracy):
+ * the average of (1) a mean of the move accuracies weighted by how volatile the game was around each
+ * move, so critical moments count more, and (2) their harmonic mean, so a few bad moves pull the
+ * score down hard instead of being averaged away by many easy ones.
+ *
+ * `winWhite` is White's win% at the start and after each ply (n + 1 values); `firstMover` is the
+ * color that made the first ply. Returns null for a side with no moves.
+ */
+export function gameAccuracy(winWhite: number[], firstMover: Color): Record<Color, number | null> {
+  const n = winWhite.length - 1;
+  const out: Record<Color, number | null> = { w: null, b: null };
+  if (n < 1) return out;
+  const size = Math.max(2, Math.min(8, Math.floor(n / 10)));
+  const lead = Math.max(0, Math.min(size, winWhite.length) - 2);
+  const windows: number[][] = [...Array(lead).fill(winWhite.slice(0, size))];
+  for (let i = 0; i + size <= winWhite.length; i++) windows.push(winWhite.slice(i, i + size));
+  const weights = windows.map((xs) => Math.max(0.5, Math.min(12, stdDev(xs))));
+  const per: Record<Color, { acc: number; w: number }[]> = { w: [], b: [] };
+  for (let i = 0; i < n; i++) {
+    const color: Color = (i % 2 === 0) === (firstMover === 'w') ? 'w' : 'b';
+    const [before, after] = color === 'w' ? [winWhite[i], winWhite[i + 1]] : [100 - winWhite[i], 100 - winWhite[i + 1]];
+    per[color].push({ acc: moveAccuracy(before, after), w: weights[i] ?? 0.5 });
+  }
+  for (const c of ['w', 'b'] as Color[]) {
+    const xs = per[c];
+    if (!xs.length) continue;
+    const weighted = xs.reduce((a, x) => a + x.acc * x.w, 0) / xs.reduce((a, x) => a + x.w, 0);
+    // A 0% move would make the harmonic mean 0; count it as 1% (Lichess's mean has the same blow-up).
+    const harmonic = xs.length / xs.reduce((a, x) => a + 1 / Math.max(1, x.acc), 0);
+    out[c] = (weighted + harmonic) / 2;
+  }
+  return out;
+}
+
+function stdDev(xs: number[]): number {
+  const m = xs.reduce((a, b) => a + b, 0) / xs.length;
+  return Math.sqrt(xs.reduce((a, b) => a + (b - m) ** 2, 0) / xs.length);
+}
+
 export interface SideStats {
   moves: number;
   counts: Record<Classification, number>;
-  /** Average move accuracy, or null with no reviewed moves. */
+  /** Game accuracy (Lichess's method, see gameAccuracy), or null with no reviewed moves. */
   accuracy: number | null;
   /** Average centipawn loss, or null with no reviewed moves. */
   acpl: number | null;
@@ -213,10 +253,14 @@ export function buildGameReview(plies: PlyRecord[], userColor: Color, ctx: Revie
   const evals: (number | null)[] = [plies[0]?.review?.evalBefore ?? (plies.length ? null : 0)];
   for (const p of plies) evals.push(p.review ? p.review.evalAfter : null);
 
+  // Game accuracy needs every position's eval; while some moves are still being analyzed, show the plain mean.
+  const allReviewed = plies.length > 0 && plies.every((p) => p.review);
+  const winWhite = allReviewed ? [winPercent(plies[0].review!.evalBefore), ...plies.map((p) => winPercent(p.review!.evalAfter))] : [];
+  const gameAcc = allReviewed ? gameAccuracy(winWhite, plies[0].color) : null;
   const stats = (c: Color): SideStats => ({
     moves: moves[c],
     counts: counts[c],
-    accuracy: mean(acc[c]),
+    accuracy: gameAcc ? gameAcc[c] : mean(acc[c]),
     acpl: mean(loss[c]),
     rating: estimateRating(counting[c], { timeClass: ctx.timeClass, known: ctx.known?.[c] ?? null, depth: depthOf(c) }),
     countedAvgDrop: mean(drops[c]),

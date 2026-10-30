@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ESTIMATE_CONFIG, RATING_CALIBRATION, estimateRating, ratingFromDrop, tableFor, type Calibration } from '../src/coach/estimate';
-import { buildGameReview } from '../src/coach/gameReview';
+import { buildGameReview, gameAccuracy, moveAccuracy } from '../src/coach/gameReview';
 import { countMoves, excludeReason, isEvenRecapture, winPercent, type CountedSide, type RatedMove } from '../src/coach/ratingMoves';
 import { MATE_CP } from '../src/config/coach';
 import { Session, newGameState } from '../src/game/session';
@@ -173,5 +173,48 @@ describe('estimated rating', () => {
       expect(t[i][0]).toBeGreaterThan(t[i - 1][0]);
       expect(t[i][1]).toBeLessThanOrEqual(t[i - 1][1]);
     }
+  });
+});
+
+describe('game accuracy (Lichess method)', () => {
+  // White's win% path for a 20-ply game: all moves perfect except where noted.
+  const path = (drops: Record<number, number>) => {
+    let w = 50;
+    const out = [w];
+    for (let i = 0; i < 20; i++) out.push((w = Math.max(0, w - (drops[i] ?? 0))));
+    return out;
+  };
+
+  it('scores perfect play 100 and lets bad moves pull it down hard', () => {
+    const perfect = gameAccuracy(path({}), 'w');
+    expect(perfect.w).toBeCloseTo(100, 0);
+    expect(perfect.b).toBeCloseTo(100, 0);
+    // One 30-point blunder among ten White moves.
+    const oneBlunder = gameAccuracy(path({ 4: 30 }), 'w').w!;
+    const plainMean = (9 * 100 + moveAccuracy(50, 20)) / 10;
+    expect(oneBlunder).toBeLessThan(plainMean);
+    expect(oneBlunder).toBeLessThan(80);
+  });
+
+  it("charges each side only for its own moves (Black's view of White's win% is mirrored)", () => {
+    // Odd plies are Black's: White's win% rising there is Black losing ground.
+    let w = 50;
+    const p = [w];
+    for (let i = 0; i < 20; i++) p.push((w = i % 2 ? Math.min(100, w + 6) : w));
+    const acc = gameAccuracy(p, 'w');
+    expect(acc.w).toBeCloseTo(100, 0);
+    expect(acc.b!).toBeLessThan(80);
+  });
+
+  it('handles Black moving first and empty games', () => {
+    expect(gameAccuracy([50, 50, 50], 'b')).toEqual({ w: expect.closeTo(100, 0), b: expect.closeTo(100, 0) });
+    expect(gameAccuracy([50], 'w')).toEqual({ w: null, b: null });
+  });
+
+  it('is what the review shows once every move is analyzed', () => {
+    const plies = game(40, (i) => (i === 20 ? -500 : 20));
+    const r = buildGameReview(plies, 'w');
+    const win = [winPercent(plies[0].review!.evalBefore), ...plies.map((p) => winPercent(p.review!.evalAfter))];
+    expect(r.stats.w.accuracy).toBeCloseTo(gameAccuracy(win, 'w').w!, 6);
   });
 });
