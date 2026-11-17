@@ -260,6 +260,7 @@ export function renderReviewPanel(
   el: HTMLElement,
   m: ReviewMode,
   coachLine: HTMLElement,
+  bar: HTMLElement,
   resolved: (fen: string) => Analysis | undefined,
   requestAnalysis: (fen: string) => void,
   learn?: (phases: PhaseStats[]) => HTMLElement | null,
@@ -267,6 +268,7 @@ export function renderReviewPanel(
 ): void {
   el.replaceChildren();
   coachLine.hidden = true;
+  bar.hidden = true;
   el.append(h('h2', {}, 'Review your Chess.com games'), usernameForm(m));
   if (m.error) el.append(h('p', { class: 'status bad' }, m.error));
   if (!m.prefs.username) {
@@ -286,7 +288,7 @@ export function renderReviewPanel(
     if (og) {
       const { before, extras } = gameExtras(m, og);
       og.screen.setModel(m.model(og));
-      renderReviewScreen(body, coachLine, og.screen, resolved, requestAnalysis, { before, extras, momentActions: (i) => momentActions(m, og, i), playFrom: (step, retry) => m.playFrom(step, retry), learn, openingLesson });
+      renderReviewScreen(body, coachLine, bar, og.screen, resolved, requestAnalysis, { before, extras, momentActions: (i) => momentActions(m, og, i), playFrom: (step, retry) => m.playFrom(step, retry), learn, openingLesson });
     } else body.append(...(m.view === 'patterns' ? patternsView(m) : gamesView(m)));
     el.append(body);
     el.append(

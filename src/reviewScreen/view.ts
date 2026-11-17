@@ -307,20 +307,24 @@ const EXCLUDE_NAMES: Record<ExcludeReason, string> = {
 
 // ---------------------------------------------------------------- navigation, move list, key moments, lines
 
-function nav(s: ReviewScreen): HTMLElement {
+/** The bar under the board: move and key-moment navigation, and Play from here. */
+function controlBar(s: ReviewScreen, o: ScreenViewOptions): HTMLElement[] {
   const n = s.plies.length;
-  const b = (label: string, aria: string, on: () => void, disabled: boolean) =>
-    h('button', { type: 'button', class: 'btn small', onclick: on, disabled, 'aria-label': aria, title: aria }, label);
+  const b = (label: string, aria: string, on: () => void, disabled: boolean, cls = 'btn icon') =>
+    h('button', { type: 'button', class: cls, onclick: on, disabled, 'aria-label': aria, title: aria }, label);
   const { order } = s.keyMoments();
   const cur = s.index ?? -1;
-  return h('div', { class: 'controls rs-nav' },
-    b('⏮', 'First position', () => s.goTo(0), s.step === 0),
-    b('◀', 'Previous move (←)', () => s.prev(), s.step === 0),
-    b('▶', 'Next move (→)', () => s.next(), s.step >= n),
-    b('⏭', 'Last position', () => s.goTo(n), s.step >= n),
-    b('⇤ Key', 'Previous key moment', () => s.jumpKey(-1), !order.some((i) => i < cur)),
-    b('Key ⇥', 'Next key moment', () => s.jumpKey(1), !order.some((i) => i > cur)),
-  );
+  return [
+    h('div', { class: 'rb-group' },
+      b('⏮', 'First position (Home)', () => s.goTo(0), s.step === 0),
+      b('◀', 'Previous move (←)', () => s.prev(), s.step === 0),
+      b('▶', 'Next move (→)', () => s.next(), s.step >= n),
+      b('⏭', 'Last position (End)', () => s.goTo(n), s.step >= n)),
+    h('div', { class: 'rb-group' },
+      b('⇤ Key', 'Previous key moment (Shift + ←)', () => s.jumpKey(-1), !order.some((i) => i < cur), 'btn small'),
+      b('Key ⇥', 'Next key moment (Shift + →)', () => s.jumpKey(1), !order.some((i) => i > cur), 'btn small')),
+    practiceRow(s, o),
+  ].filter((x): x is HTMLElement => !!x);
 }
 
 /** Your blunder: practice from just before it ("Try this position again"); otherwise from the position before the move. */
@@ -340,7 +344,7 @@ function practiceRow(s: ReviewScreen, o: ScreenViewOptions): HTMLElement | null 
   const over = new Chess(fen).isGameOver();
   const last = step > 0 ? s.plies[step - 1] : null;
   const blunder = !!last && last.by === 'user' && last.review?.classification === 'Blunder';
-  return h('div', { class: 'controls rs-practice' },
+  return h('div', { class: 'rb-group' },
     h('button', { type: 'button', class: 'btn small', onclick: () => o.playFrom!(step, false), disabled: over, title: over ? 'The game is over in this position' : 'Play this position against the coach' }, 'Play from here'),
     blunder ? h('button', { type: 'button', class: 'btn small', onclick: () => o.playFrom!(step - 1, true), title: 'Play the position before your blunder again' }, 'Try this position again') : null,
   );
@@ -418,16 +422,19 @@ function linesPanel(s: ReviewScreen, resolved: (fen: string) => import('../engin
   return details;
 }
 
-/** Renders the review panel (summary, nav, move list, key moments, lines) and the coach line under the board. */
+/** Renders the review panel (summary, graph, move list, key moments, lines), and under the board the control bar and the coach line. */
 export function renderReviewScreen(
   panel: HTMLElement,
   coachLine: HTMLElement,
+  bar: HTMLElement,
   s: ReviewScreen,
   resolved: (fen: string) => import('../engine/uci').Analysis | undefined,
   requestAnalysis: (fen: string) => void,
   o: ScreenViewOptions = {},
 ): void {
   const learn = s.model.progress ? null : o.learn?.(s.review().phases) ?? null;
-  panel.replaceChildren(...(o.before ?? []), summaryCard(s, o), ...(learn ? [learn] : []), graph(s), nav(s), ...[practiceRow(s, o)].filter((x): x is HTMLElement => !!x), moveList(s), keyMoments(s, o), linesPanel(s, resolved, requestAnalysis), ...(o.extras ?? []));
+  panel.replaceChildren(...(o.before ?? []), summaryCard(s, o), ...(learn ? [learn] : []), graph(s), moveList(s), keyMoments(s, o), linesPanel(s, resolved, requestAnalysis), ...(o.extras ?? []));
+  bar.hidden = false;
+  bar.replaceChildren(...controlBar(s, o));
   renderCoachLine(coachLine, s);
 }

@@ -753,7 +753,7 @@ class App {
     const view = this.reviewMode.boardView();
     this.board.render(view);
     renderEvalBar($('evalbar'), view.evalCp, view.orientation, view.showEval);
-    renderReviewPanel($('review-panel'), this.reviewMode, $('coach-line'), (f) => this.resolved.get(f), (f) => void this.analyze(f).catch(() => {}), (phases) => this.lessonSuggestions(phases), (name) => this.openingLessonLink(name));
+    renderReviewPanel($('review-panel'), this.reviewMode, $('coach-line'), $('review-bar'), (f) => this.resolved.get(f), (f) => void this.analyze(f).catch(() => {}), (phases) => this.lessonSuggestions(phases), (name) => this.openingLessonLink(name));
   }
 
   renderAnalysis(): void {
@@ -865,6 +865,8 @@ class App {
 
   render(): void {
     this.eventSounds();
+    // Shown again by the review screen when one is open (Play's game review, Review mode's game).
+    $('review-bar').hidden = true;
     const mode = this.settings.mode;
     document.body.classList.toggle('mode-puzzles', mode !== 'play');
     document.body.classList.toggle('mode-analysis', mode === 'analysis');
@@ -1018,9 +1020,11 @@ class App {
     const coachLine = $('coach-line');
     reviewEl.hidden = !screen;
     coachLine.hidden = !screen;
+    // While reviewing, the review comes first and the game card shrinks to its buttons.
+    $('play-panel').classList.toggle('reviewing', !!screen);
     if (screen) {
-      renderReviewScreen(reviewEl, coachLine, screen, (f) => this.resolved.get(f), (f) => void this.analyze(f).catch(() => {}), {
-        before: [h2('Game review'), closeButton(() => this.closeScreen())],
+      renderReviewScreen(reviewEl, coachLine, $('review-bar'), screen, (f) => this.resolved.get(f), (f) => void this.analyze(f).catch(() => {}), {
+        before: [h('div', { class: 'rs-head' }, h('h2', {}, 'Game review'), h('button', { type: 'button', class: 'btn small', onclick: () => this.closeScreen() }, 'Close'))],
         learn: (phases) => this.lessonSuggestions(phases),
         openingLesson: (name) => this.openingLessonLink(name),
         playFrom: (step, retry) => {
@@ -1324,20 +1328,6 @@ function isPromotionMove(fen: string, from: string, to: string): boolean {
   return new Chess(fen).moves({ verbose: true }).some((m) => m.from === from && m.to === to && !!m.promotion);
 }
 
-function h2(text: string): HTMLElement {
-  const el = document.createElement('h2');
-  el.textContent = text;
-  return el;
-}
-
-function closeButton(onClick: () => void): HTMLElement {
-  const b = document.createElement('button');
-  b.type = 'button';
-  b.className = 'btn small rs-close';
-  b.textContent = 'Close';
-  b.addEventListener('click', onClick);
-  return b;
-}
 
 /** Keyboard for a review screen: ← → step, Home/End, Shift+← → jump between key moments. */
 function screenKey(rs: ReviewScreen, e: KeyboardEvent): boolean {

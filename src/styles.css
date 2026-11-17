@@ -159,6 +159,22 @@ h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color
 
 .nav { display: flex; gap: 6px; justify-content: center; margin-top: 10px; flex-wrap: wrap; }
 
+/* Review controls right under the board (they replace the game's move buttons while a review is open). */
+.review-bar { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px 14px; margin-top: 10px; }
+.review-bar[hidden] { display: none; }
+.rb-group { display: flex; gap: 6px; align-items: center; }
+.board-col:has(.review-bar:not([hidden])) .nav { display: none; }
+
+/* Play panel during a game review: the review first, the game card reduced to its buttons. */
+#play-panel.reviewing #review { order: -1; }
+#play-panel.reviewing #status,
+#play-panel.reviewing #game-info,
+#play-panel.reviewing #btn-hint,
+#play-panel.reviewing #hint,
+#play-panel.reviewing #btn-resign,
+#play-panel.reviewing #btn-review { display: none; }
+#play-panel.reviewing .play-main { grid-template-columns: 1fr 1fr; margin-top: 0; }
+
 /* promotion picker */
 .promo-overlay {
   position: absolute;
@@ -607,8 +623,8 @@ body.mode-analysis .nav { display: flex; }
 .rs-coach-head { margin: 0; font-weight: 600; display: flex; align-items: center; flex-wrap: wrap; gap: 2px 4px; }
 .rs-coach-head.bad { color: var(--text); }
 .rs-eval { color: var(--muted); font-weight: 400; font-variant-numeric: tabular-nums; font-size: 0.85rem; }
-.rs-close { float: right; margin-top: -26px; }
-#review h2 { margin-bottom: 10px; }
+.rs-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.rs-head h2 { margin: 0; }
 
 .rs-summary { margin-bottom: 10px; border: 1px solid var(--border); border-radius: var(--radius); padding: 0 10px; }
 .rs-summary > summary { cursor: pointer; padding: 8px 0; font-weight: 600; }
@@ -637,7 +653,6 @@ body.mode-analysis .nav { display: flex; }
 .rs-graph { height: 84px; margin: 4px 0 8px; }
 .eval-graph .g-marker { fill: var(--accent); stroke: #fff; stroke-width: 1.2; }
 .eval-graph .g-dot { stroke: #fff; stroke-width: 0.9; }
-.rs-nav { margin: 4px 0 8px; }
 .rs-moves { max-height: 260px; margin-bottom: 10px; }
 .rs-moves .move-cell { display: inline-flex; align-items: center; }
 .rs-key h3, .rs-lines summary { font-size: 0.85rem; font-weight: 600; }
@@ -792,7 +807,6 @@ input[type='range'] { width: 100%; accent-color: var(--accent); }
 .pc-legend { margin-top: 4px; }
 .pc-key { display: inline-block; width: 16px; height: 0; vertical-align: middle; border-top: 2px solid var(--accent); }
 .pc-key.original { border-top: 2px dashed var(--muted); }
-.rs-practice { margin-top: 6px; }
 #pd-goal { font: inherit; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); }
 #pd-goal-why { display: block; margin-top: 4px; }
 
@@ -875,3 +889,7 @@ input[type='range'] { width: 100%; accent-color: var(--accent); }
 .rp-name-h { margin-bottom: 0 !important; }
 .rp-tally { margin-top: 12px; }
 .lr-group { margin: 10px 0 4px; font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+
+@media (max-width: 600px) {
+  .review-bar .btn.small { min-height: 40px; }
+}
