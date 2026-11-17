@@ -47,6 +47,8 @@ import { LearnMode } from './learn/controller';
 import { lessonForOpening, suggestLessons } from './learn/suggest';
 import { TablebaseClient } from './learn/tablebase';
 import { renderLearnPanel } from './ui/learnPanel';
+import { RepertoireMode } from './repertoire/controller';
+import { renderRepertoirePanel } from './ui/repertoirePanel';
 import { openTablebaseStore } from './review/cache';
 import type { PhaseStats } from './coach/gameReview';
 import { h } from './ui/panel';
@@ -92,6 +94,7 @@ class App {
   reviewMode: ReviewMode;
   bestMove: BestMoveMode;
   learn: LearnMode;
+  reps: RepertoireMode;
   /** Learn mode's engine results, by depth and FEN. */
   private learnAnalyses = new Map<string, Promise<Analysis>>();
 
@@ -168,6 +171,18 @@ class App {
       promotionHost: $('board-host'),
     });
 
+    this.reps = new RepertoireMode({
+      requestRender: () => this.render(),
+      promotionHost: $('board-host'),
+      confirm: (msg, ok) => this.confirm(msg, ok),
+      // Only the latest position's eval matters while building, so older searches are dropped.
+      analyze: (fen, depth) => {
+        this.coachEngine.cancelAll('reps');
+        return this.coachEngine.analyze(fen, { depth, multiPv: 1, owner: 'reps' });
+      },
+      book: () => loadBook(base),
+    });
+
     this.bindUi();
     this.applyAppearance();
     this.applySound();
@@ -176,6 +191,7 @@ class App {
     else if (this.settings.mode === 'review') this.reviewMode.enter();
     else if (this.settings.mode === 'analysis') this.bestMove.enter();
     else if (this.settings.mode === 'learn') this.learn.enter();
+    else if (this.settings.mode === 'reps') this.reps.enter();
     else if (!saved) this.openNewGameDialog(true);
     if (saved) this.resume();
     if (saved?.plies.length) void this.tagBookMoves();
@@ -306,6 +322,7 @@ class App {
     if (this.settings.mode === 'review') return this.reviewMode.onBoardMove(from, to, $('board-host'));
     if (this.settings.mode === 'analysis') return this.bestMove.onBoardMove(from, to);
     if (this.settings.mode === 'learn') return this.learn.onBoardMove(from, to);
+    if (this.settings.mode === 'reps') return this.reps.onBoardMove(from, to);
     if (this.screen) {
       const color = this.screen.currentFen().split(' ')[1] as Color;
       const promo = isPromotionMove(this.screen.currentFen(), from, to) ? await pickPromotion($('board-host'), color) : undefined;
@@ -634,6 +651,8 @@ class App {
     if (mode === 'analysis') this.bestMove.enter();
     else this.coachEngine.cancelAll('analysis');
     if (mode === 'learn') this.learn.enter();
+    if (mode === 'reps') this.reps.enter();
+    else this.coachEngine.cancelAll('reps');
     this.render();
   }
 
@@ -754,6 +773,15 @@ class App {
     $('continue-here').hidden = true;
   }
 
+  renderReps(): void {
+    const view = this.reps.boardView();
+    this.board.render(view);
+    renderEvalBar($('evalbar'), view.evalCp, view.orientation, this.reps.view === 'edit');
+    renderRepertoirePanel($('reps-panel'), this.reps);
+    $('coach-line').hidden = true;
+    $('continue-here').hidden = true;
+  }
+
   /** "Practice this theme": Puzzle mode, rated puzzles of that Lichess theme. */
   openPuzzleTheme(theme: string): void {
     this.setMode('puzzles');
@@ -827,6 +855,11 @@ class App {
       const d = changed('learn-drill', id, `${l.drill?.phase ?? ''}:${l.drill?.misses ?? 0}`);
       if (t === 'correct' || pr === 'done' || d?.startsWith('done')) sounds.play('correct');
       else if (t === 'wrong' || pr === 'failed' || pr === 'flagged' || d?.startsWith('offbook')) sounds.play('wrong');
+    } else if (mode === 'reps') {
+      const run = this.reps.run;
+      const now = changed('reps', run ? `${run.line.ucis.join(' ')}|${run.pass}` : '', run?.phase ?? '');
+      if (now === 'done') sounds.play('correct');
+      else if (now === 'wrong') sounds.play('wrong');
     }
   }
 
@@ -837,18 +870,20 @@ class App {
     document.body.classList.toggle('mode-analysis', mode === 'analysis');
     document.body.classList.toggle('mode-learn', mode === 'learn');
     // Browsing a list (lessons, games): phones hide the idle board so the list comes first.
-    const listing = (mode === 'learn' && this.learn.view !== 'lesson') || (mode === 'review' && this.reviewMode.view !== 'game');
+    const listing = (mode === 'learn' && this.learn.view !== 'lesson') || (mode === 'reps' && this.reps.view === 'list') || (mode === 'review' && this.reviewMode.view !== 'game');
     document.body.classList.toggle('listing', listing);
     $('play-panel').hidden = mode !== 'play';
     $('puzzle-panel').hidden = mode !== 'puzzles';
     $('review-panel').hidden = mode !== 'review';
     $('analysis-panel').hidden = mode !== 'analysis';
     $('learn-panel').hidden = mode !== 'learn';
-    for (const m of ['play', 'puzzles', 'review', 'analysis', 'learn']) $(`mode-${m}`).setAttribute('aria-selected', String(mode === m));
+    $('reps-panel').hidden = mode !== 'reps';
+    for (const m of ['play', 'puzzles', 'review', 'analysis', 'learn', 'reps']) $(`mode-${m}`).setAttribute('aria-selected', String(mode === m));
     if (mode === 'puzzles') return this.renderPuzzles();
     if (mode === 'review') return this.renderReview();
     if (mode === 'analysis') return this.renderAnalysis();
     if (mode === 'learn') return this.renderLearn();
+    if (mode === 'reps') return this.renderReps();
 
     const s = this.session;
     const over = s.result();
@@ -1062,6 +1097,7 @@ class App {
     $('mode-review').addEventListener('click', () => this.setMode('review'));
     $('mode-analysis').addEventListener('click', () => this.setMode('analysis'));
     $('mode-learn').addEventListener('click', () => this.setMode('learn'));
+    $('mode-reps').addEventListener('click', () => this.setMode('reps'));
     $('btn-hint').addEventListener('click', () => this.requestHint());
     // Browsers only start audio after a user gesture.
     const unlock = () => sounds.unlock();
@@ -1144,6 +1180,18 @@ class App {
         if (lm.view !== 'lesson') return;
         const keys: Record<string, () => void> = { ArrowLeft: () => lm.prev(), ArrowRight: () => lm.next(), h: () => lm.hint() };
         if (keys[e.key] && !e.metaKey && !e.ctrlKey && !e.altKey) {
+          e.preventDefault();
+          keys[e.key]();
+        }
+        return;
+      }
+      if (this.settings.mode === 'reps') {
+        const r = this.reps;
+        if (e.metaKey || e.ctrlKey || e.altKey) return;
+        const keys: Record<string, () => void> = r.view === 'edit'
+          ? { ArrowLeft: () => r.back(), ArrowRight: () => r.forward(), Home: () => r.goTo(0) }
+          : r.view === 'train' ? { h: () => r.hint(), Enter: () => r.next() } : {};
+        if (keys[e.key] && !(e.key === 'Enter' && (e.target as HTMLElement).closest('button'))) {
           e.preventDefault();
           keys[e.key]();
         }

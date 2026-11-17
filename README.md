@@ -20,6 +20,7 @@ Play Stockfish at a strength from 400 to 2500 Elo, and get a plain-English expla
 - **Review mode.** Enter a Chess.com username to import your public games, analyze them in the background, and get a review of each game plus patterns across games: accuracy, key moments with explanations, openings and where you left theory, clock use, recurring weaknesses with the numbers behind them. See [Review mode](#review-mode-chesscom-games).
 - **Best move calculator.** The **Best move** tab shows the engine's best move for any position, with its evaluation, the expected line, a one-line idea and two alternatives. Set the position up by hand, paste a FEN or PGN, or load the game from the Play tab. See [Best move](#best-move).
 - **Learn mode.** Lessons in three sections (Openings, Middlegame, Endgames) with progress tracking. Lessons explain a position, ask you to find a move, or have you play it out against the coach. Endgames are checked against the Lichess tablebase. See [Learn](#learn).
+- **Repertoire trainer.** Build the openings you play move by move on the board (or paste a PGN with variations, or start from a Learn opening), then drill them with spaced repetition. The app plays the replies you prepared for and you play your moves from memory. See [Repertoire](#repertoire).
 - **Puzzle mode.** Switch between **Play** and **Puzzles** at the top. Puzzles come from the Lichess puzzle database and are served near your own puzzle rating (separate from the game strength setting), or from a band and theme you pick. Wrong moves are explained by the coach, with an arrow to the right move, and you can retry or see the solution. Failed puzzles come back in **Review mistakes**. See [Puzzles](#puzzles).
 - **Takebacks and branching.** Unlimited takebacks, with a counter. Click any move to review it, then either play a different move or press **Continue from here** on any earlier position to branch (you're asked to confirm first).
 - **Sound.** Move, capture, castling, check and promotion sounds on every board, plus sounds for game start and end and for right and wrong answers in Puzzles and Learn. They're synthesized in the browser (no audio files). The 🔊 button at the top mutes them, and the choice is saved.
@@ -234,6 +235,32 @@ export default {
 It exits with a list of problems if anything fails. I tested it with a deliberately broken lesson, and it caught a false claim, a losing solution, a slow "fastest" solution and an impossible goal.
 
 The script imports the app's TypeScript with Node's built-in type stripping (Node 24 in CI); `scripts/ts-resolve.mjs` adds the `.ts` extensions Vite lets the source leave out.
+
+## Repertoire
+
+The **Repertoire** tab trains your opening repertoire with spaced repetition. Make one repertoire per side and opening (for example "London System" as White, "Caro-Kann" as Black).
+
+**Building.** Play moves on the board to add them. Where it's your turn you keep **one** move per position, so training always knows what to expect; to change it, delete it (✕) and play another. Where it's the opponent's turn, add as many replies as you want to prepare for. The panel shows:
+- the moves to the current position;
+- the opening name (from the Lichess openings dataset);
+- the engine eval;
+- book moves to add with a click.
+
+Arrows show the moves you already have: green for yours, blue for the opponent's. Deleting a move also deletes everything that can only be reached through it. Positions are stored by FEN, so transpositions share one entry.
+
+**Importing and exporting.**
+- **Import PGN** adds every move of a pasted PGN, variations in brackets included. Several games can be pasted at once; comments and NAGs are ignored.
+- A line that runs into a different move of yours stops there. The import says how many lines stopped.
+- **Add lines from a Learn lesson** (or **Start with** when creating a repertoire) copies the drill lines of an opening lesson.
+- **Export PGN** writes the whole repertoire as one game with variations, which imports back to the same tree. Use it as a backup: repertoires live in this browser's `localStorage`.
+
+**Training.** Each of your moves is a flashcard. A training run plays a whole line from move 1: the app plays the opponent's moves and you play yours.
+- **Learn new** takes the next line with moves you haven't seen. New moves are shown with an arrow. At the end you play the same line again from memory, and moves you get right are due again tomorrow.
+- **Train** takes the line with the most overdue moves.
+  - A move played right from memory is scheduled further out: 1 day, then 3 days, then the interval times the card's ease (a small SM-2 variant; `src/repertoire/srs.ts`, tuning in `src/config/repertoire.ts`).
+  - A wrong move, or using **Hint**, counts as a miss. The correct move is shown and you play it to go on. The move comes back in 10 minutes, its interval restarts, and its ease drops so it comes back more often.
+- **Practice all** plays random lines whether due or not. Misses still count; right answers only move cards that were due.
+- **Edit here** opens the current training position in the builder.
 
 ## Starting a game from any position
 
@@ -478,6 +505,10 @@ src/
   learn/               Learn mode: lesson types, validation, registry, progress, tablebase client,
                        suggestions, controller; lessons/<section>/*.ts are the lesson data
   ui/learnPanel.ts     the Learn panel
+  repertoire/          Repertoire trainer: tree (moves by position, PGN import/export), spaced
+                       repetition, localStorage store, controller
+  ui/repertoirePanel.ts  the Repertoire panel
+  config/repertoire.ts   spaced-repetition and builder tuning
   config/learn.ts      Learn tuning (Try margin, engine depth, hold length, suggestions)
   ui/practiceDialog.ts, ui/practiceCard.ts   its dialog and Play-panel card
   config/analysis.ts   Best move depths and line count

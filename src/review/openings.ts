@@ -13,6 +13,8 @@ export interface OpeningBook {
   named: Map<string, { eco: string; name: string }>;
   /** Every position on any book line, with the book moves played from it. */
   next: Map<string, Set<string>>;
+  /** How many dataset lines play a move from a position (`key|uci`): a rough popularity. */
+  lines: Map<string, number>;
 }
 
 /** Position key without move counters, so transpositions match. */
@@ -23,19 +25,21 @@ export function posKey(fen: string): string {
 export function buildBook(lines: OpeningLine[]): OpeningBook {
   const named = new Map<string, { eco: string; name: string }>();
   const next = new Map<string, Set<string>>();
+  const count = new Map<string, number>();
   for (const [eco, name, ucis] of lines) {
     const chess = new Chess();
     for (const uci of ucis.split(' ').filter(Boolean)) {
       const key = posKey(chess.fen());
       if (!next.has(key)) next.set(key, new Set());
       next.get(key)!.add(uci);
+      count.set(`${key}|${uci}`, (count.get(`${key}|${uci}`) ?? 0) + 1);
       chess.move(parseUci(uci));
     }
     const end = posKey(chess.fen());
     if (!next.has(end)) next.set(end, new Set());
     named.set(end, { eco, name });
   }
-  return { named, next };
+  return { named, next, lines: count };
 }
 
 export interface OpeningInfo {
