@@ -3,7 +3,7 @@ import type { Lesson } from '../../types';
 export default {
   id: "sicilian",
   section: "openings",
-  order: 4,
+  order: 11,
   title: "The Sicilian Defence",
   summary: "Fight for d4 from the side: the Najdorf, and what to do against 2.c3 and 2.Nc3. (Black)",
   openings: [

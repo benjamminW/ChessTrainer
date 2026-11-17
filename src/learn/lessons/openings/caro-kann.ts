@@ -3,7 +3,7 @@ import type { Lesson } from '../../types';
 export default {
   id: "caro-kann",
   section: "openings",
-  order: 6,
+  order: 13,
   title: "The Caro-Kann Defence",
   summary: "Challenge e4 with ...c6 and ...d5, keeping the light bishop free. (Black)",
   openings: [

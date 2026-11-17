@@ -251,8 +251,8 @@ describe('opening lessons', () => {
   const openings = LESSONS.filter((l) => l.section === 'openings');
   const rows = new Set((openingRows as [string, string, string][]).map((r) => r[2]));
 
-  it('has 8 openings for both colors, each with 2 to 4 drill lines from the dataset', () => {
-    expect(openings).toHaveLength(8);
+  it('has 21 openings for both colors, each with 2 to 4 drill lines from the dataset', () => {
+    expect(openings).toHaveLength(21);
     const sides = new Set<string>();
     for (const l of openings) {
       const d = l.steps.find((s) => s.type === 'drill') as DrillStep;
@@ -271,7 +271,10 @@ describe('opening lessons', () => {
     expect(lessonForOpening("Queen's Gambit Declined: Exchange Variation")?.id).toBe('queens-gambit');
     expect(lessonForOpening("Queen's Pawn Game: London System")?.id).toBe('london');
     expect(lessonForOpening('Sicilian Defense: Najdorf Variation')?.id).toBe('sicilian');
-    expect(lessonForOpening('Ruy Lopez')).toBeNull();
+    expect(lessonForOpening('Ruy Lopez: Closed, Zaitsev System')?.id).toBe('ruy-lopez');
+    expect(lessonForOpening("Queen's Pawn Game: Colle System")?.id).toBe('colle');
+    expect(lessonForOpening("King's Indian Attack: Sicilian Variation")?.id).toBe('kings-indian-attack');
+    expect(lessonForOpening('Amar Opening')).toBeNull();
     expect(lessonForOpening('Italian Gamebit')).toBeNull();
   });
 });

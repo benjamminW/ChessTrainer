@@ -638,7 +638,8 @@ export class LearnMode {
     if (s.type === 'explain') {
       const c = new Chess(s.fen);
       return {
-        fen: s.fen, orientation: orientationOf(s.fen, null), turn: c.turn(), movable: null, dests: new Map(), lastMove: null, check: c.inCheck(),
+        // Opening lessons show their positions from your side (the drill's), whoever is to move.
+        fen: s.fen, orientation: orientationOf(s.fen, this.lesson?.steps.find((x): x is DrillStep => x.type === 'drill')?.side ?? null), turn: c.turn(), movable: null, dests: new Map(), lastMove: null, check: c.inCheck(),
         shapes: [
           ...(s.arrows ?? []).map((a) => ({ from: a.from, to: a.to, brush: MATE_SHAPES[a.color ?? 'green'] })),
           ...(s.squares ?? []).map((q) => ({ from: q.sq, brush: MATE_SHAPES[q.color ?? 'yellow'] })),
@@ -700,7 +701,7 @@ function destsOf(c: Chess): Map<string, string[]> {
   return d;
 }
 
-/** Explain and Try boards face the side to move. */
+/** Explain and Try boards face the side to move (or `user`, when given). */
 function orientationOf(fen: string, user: Side | null): Side {
   return user ?? (fen.split(' ')[1] as Side);
 }

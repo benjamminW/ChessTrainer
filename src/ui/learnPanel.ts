@@ -1,7 +1,7 @@
 import type { LearnMode } from '../learn/controller';
 import { isComplete, lessonProgress, lessonShare } from '../learn/progress';
 import { SECTIONS, lessonById, lessonsIn } from '../learn/registry';
-import type { DrillStep, PracticeStep, TryStep } from '../learn/types';
+import type { DrillStep, Lesson, PracticeStep, TryStep } from '../learn/types';
 import { h } from './panel';
 
 const STEP_NAMES = { explain: 'Explain', try: 'Try', practice: 'Practice', drill: 'Drill' } as const;
@@ -28,8 +28,15 @@ function list(m: LearnMode): HTMLElement[] {
       h('div', { class: 'lr-section-head' }, h('h3', {}, s.title), h('span', { class: 'muted small' }, lessons.length ? `${done} of ${lessons.length} done` : 'Coming soon')),
       lessons.length ? bar(done / lessons.length) : h('span', {}),
       h('p', { class: 'muted small' }, s.blurb));
-    if (lessons.length) {
-      section.append(h('ul', { class: 'lr-lessons' }, ...lessons.map((l) => {
+    // Openings are grouped by the side you play (the drill's side).
+    const side = (l: Lesson) => (l.steps.find((x): x is DrillStep => x.type === 'drill')?.side ?? null);
+    const groups: [string | null, Lesson[]][] = s.id === 'openings'
+      ? [['As White', lessons.filter((l) => side(l) === 'w')], ['As Black', lessons.filter((l) => side(l) !== 'w')]]
+      : [[null, lessons]];
+    for (const [label, group] of groups) {
+      if (!group.length) continue;
+      if (label) section.append(h('h4', { class: 'lr-group' }, label));
+      section.append(h('ul', { class: 'lr-lessons' }, ...group.map((l) => {
         const share = lessonShare(m.progress, l);
         const complete = isComplete(m.progress, l);
         return h('li', {},

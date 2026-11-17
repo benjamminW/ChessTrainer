@@ -3,7 +3,7 @@ import type { Lesson } from '../../types';
 export default {
   id: "london",
   section: "openings",
-  order: 3,
+  order: 8,
   title: "The London System",
   summary: "One reliable setup against almost anything. (White)",
   openings: [

@@ -3,7 +3,7 @@ import type { Lesson } from '../../types';
 export default {
   id: "scandinavian",
   section: "openings",
-  order: 8,
+  order: 16,
   title: "The Scandinavian Defence",
   summary: "A simple, open answer to 1.e4 for beginners. (Black)",
   openings: [

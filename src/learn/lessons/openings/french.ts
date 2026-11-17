@@ -3,7 +3,7 @@ import type { Lesson } from '../../types';
 export default {
   id: "french",
   section: "openings",
-  order: 5,
+  order: 12,
   title: "The French Defence",
   summary: "A solid pawn chain and pawn breaks with ...c5. (Black)",
   openings: [

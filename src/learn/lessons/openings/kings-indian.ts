@@ -3,7 +3,7 @@ import type { Lesson } from '../../types';
 export default {
   id: "kings-indian",
   section: "openings",
-  order: 7,
+  order: 17,
   title: "The King's Indian Defence",
   summary: "Let White build a centre, then strike back with ...e5. (Black)",
   openings: [

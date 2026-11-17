@@ -141,12 +141,17 @@ The **Learn** tab has three sections: Openings, Middlegame and Endgames. Each li
 
 ### Openings and the drill
 
-There are eight opening lessons:
-- **As White:** the Italian Game, the Queen's Gambit and the London System.
-- **As Black:** the Sicilian, the French, the Caro-Kann, the King's Indian, and the Scandinavian (a simple answer to 1.e4 for beginners).
+There are 21 opening lessons:
+- **As White (10):**
+  - **Openings:** the Italian Game, the Ruy Lopez, the Scotch Game, the Vienna Game (with Bc4), the Queen's Gambit, the Catalan and the English.
+  - **Systems** you can play against almost anything: the London, the Colle and the King's Indian Attack.
+- **As Black (11):**
+  - **Against 1.e4:** the Sicilian, the French, the Caro-Kann, the Pirc, Petrov's Defence, and the Scandinavian (a simple answer for beginners).
+  - **Against 1.d4:** the King's Indian, the Nimzo-Indian, the Slav, the Grünfeld and the Leningrad Dutch.
 
 Each has 3–4 annotated key positions explaining both sides' plans (original text) and a **Drill**:
-- **How it plays:** you play your side from move 1, and the coach answers with one of the lesson's 2–3 lines.
+- **How it plays:** you play your side from move 1, and the coach answers with one of the lesson's 2–4 lines.
+- **Seeding a repertoire:** every opening lesson can also start a repertoire in the [Repertoire](#repertoire) tab. The newer lessons keep one move of yours per position, so their lines copy over in full.
 - **Leaving book:** if your move isn't on any of the lines, it isn't played. You see the book move or moves (green arrows) and the idea in a sentence or two, then **Retry**. The idea is the lesson's own note when it has one, otherwise the coach's description of the move. **Hint** shows the book move.
 - **Choosing a line:** if you pick another listed line, the coach follows that one.
 - **Resurfacing misses:** each line counts how often you finished it and how often you left book on it. Lines you haven't finished come first; after that, lines are picked in proportion to 1 + 2 × misses, so the ones you miss most come back. The step is done once every line has been played to the end.

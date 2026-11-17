@@ -874,3 +874,4 @@ input[type='range'] { width: 100%; accent-color: var(--accent); }
 .rp-new { font-weight: 600; color: var(--best); }
 .rp-name-h { margin-bottom: 0 !important; }
 .rp-tally { margin-top: 12px; }
+.lr-group { margin: 10px 0 4px; font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }

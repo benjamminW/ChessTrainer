@@ -3,7 +3,7 @@ import type { Lesson } from '../../types';
 export default {
   id: "queens-gambit",
   section: "openings",
-  order: 2,
+  order: 5,
   title: "The Queen's Gambit",
   summary: "Offer the c-pawn to undermine d5, against ...e6, ...dxc4 and ...c6. (White)",
   openings: [
